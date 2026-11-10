@@ -1,0 +1,23 @@
+{
+  "training_end_date": "2026-10-22",
+  "lightgbm": "4.7.0",
+  "pandas": "3.1.0",
+  "numpy": "2.5.4",
+  "sha256": {
+    "analog_table.parquet": "5eed6ccbf62bc1f21abaa07f719d81d1d79b5372a9bc97447f9140a9a8bec2ae",
+    "calibrator.joblib": "0b07e2003df034eee1bab5ab04139be3970c9769d5ee9a05ddf86b43bdf23a8c",
+    "config_snapshot.yaml": "bd1fb1d0066d1af458af63faab05d53cba4012160738f3c5a4aecb8b29203858",
+    "feature_list.json": "9bdd754926f1419639aba478595bd131e02a5ac0bcb9b0a2d15c09f44b703fd6",
+    "meta.joblib": "4b444631e55d108554743486636aa4d45379e2eb81f6992bbae3143697d43818",
+    "meta.txt": "e767c4e3a6d560c7ccc5f74b40e8ea7872548949c129871fd516a3f42b9b5044",
+    "primary.joblib": "6e76a7dbe9b45e5d17f2b8558a7e033e527adb6725e904829b0ca116dac5cd5e",
+    "primary.txt": "70d587468ee78b68b890301d987e8f8be53a5f676822cdab21e0b9f9fccad6e8",
+    "quantile_10.joblib": "99c24cb7bf6d07cb4ff4143bb6ac9c92cfc21408766da4d306be3e04c1022032",
+    "quantile_10.txt": "d84ca6521ae4fe2ec7c01ba1dcaec85bd9b6246fc37f9fe247f9c7988ce1538f",
+    "quantile_50.joblib": "f773b981b354da543614be9c28f800d14d63f00604c57b713a4f59554c179be9",
+    "quantile_50.txt": "7e8e3188a96673ec0e29d8cd2f96d31a75f2097559ca59325c8a49046b2c0c9b",
+    "quantile_90.joblib": "8d082e5d517956e57a23c003b3eeeef53f41282fde4b0fc8bc3a0107da781b00",
+    "quantile_90.txt": "b5328293f081962b88dfc957e83bf0f4c81a435c170d24cc816ea3a7c33401ef",
+    "thresholds.json": "f57351d00a777b9eb252fb958827548f4195b188a80c7cdd5018e3340c72ab75"
+  }
+}

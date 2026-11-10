@@ -1,0 +1,42 @@
+asset: AAPL
+feed: iex
+holdout_start: '2026-01-01'
+horizon_bars: 12
+kdz: 0.3
+meta_params:
+  learning_rate: 0.03
+  max_depth: 3
+  min_child_samples: 500
+  n_estimators: 100
+  num_leaves: 7
+  random_state: 42
+  reg_lambda: 10.0
+  verbose: -1
+primary_params:
+  colsample_bytree: 0.7
+  learning_rate: 0.03
+  max_depth: 5
+  min_child_samples: 300
+  n_estimators: 200
+  num_leaves: 15
+  random_state: 42
+  reg_alpha: 0.1
+  reg_lambda: 5
+  subsample: 0.7
+  subsample_freq: 1
+  verbose: -1
+quantile_params:
+  learning_rate: 0.03
+  max_depth: 5
+  min_child_samples: 300
+  n_estimators: 150
+  num_leaves: 15
+  random_state: 42
+  reg_lambda: 5.0
+  verbose: -1
+skip_first_bars: 3
+target_coverage: 0.2
+timeframe_minutes: 5
+train_end: '2024-12-31'
+val_end: '2025-12-31'
+val_start: '2025-01-01'
