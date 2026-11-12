@@ -24,7 +24,7 @@ A machine-learning trading indicator for Apple (AAPL) 5-minute candles. It predi
 7. [Configuration Reference](#7-configuration-reference)
 8. [Model Bundle](#8-model-bundle)
 9. [Performance](#9-performance)
-10. [Live System (Planned)](#10-live-system-planned)
+10. [Live System (Backend Implemented)](#10-live-system-backend-implemented)
 11. [Limitations](#11-limitations)
 12. [Design Decisions](#12-design-decisions)
 13. [References](#13-references)
@@ -268,7 +268,8 @@ ML_project/
 ├── .gitignore
 │
 ├── scripts/
-│   └── make_report_tables.py    ← Generates reports/generated_tables.md
+│   ├── make_report_tables.py    ← Generates reports/generated_tables.md
+│   └── replay_day.py            ← Full-day live pipeline replay & parity check
 │
 ├── src/
 │   ├── features.py              ← 24 causal features; shared by train and predict
@@ -278,11 +279,18 @@ ML_project/
 │   ├── splits.py                ← walk_forward_blocks()
 │   ├── evaluate.py              ← Wilson CI, ECE, block permutation test
 │   ├── models.py                ← load_bundle(), make_signal()
-│   └── calibrate.py             ← Minimal stub (calibration inline in train.py)
+│   ├── calibrate.py             ← Minimal stub (calibration inline in train.py)
+│   └── live/                    ← FastAPI, SQLite WAL, Alpaca IEX stream, scorer
+│       ├── db.py                ← Schema, immutability triggers, online backups
+│       ├── collector.py         ← Minute bar builder, NYSE schedule, REST backfill
+│       ├── predictor.py         ← Live inference wrapping models/v1
+│       ├── scorer.py            ← Outcome resolution, Wilson CI, ECE, baseline views
+│       └── app.py               ← FastAPI REST + WebSocket (/ws) server
 │
 ├── data/
 │   ├── raw/                     ← Raw parquet (gitignored)
-│   └── clean/                   ← Canonical data/clean/aapl_5m_clean.parquet (gitignored)
+│   ├── clean/                   ← Canonical data/clean/aapl_5m_clean.parquet (gitignored)
+│   └── live/                    ← Live SQLite WAL DB and process lock (gitignored)
 │
 ├── models/v1/                   ← Frozen LightGBM bundle (.txt + calibrator.joblib + metadata)
 ├── reports/
@@ -292,9 +300,9 @@ ML_project/
 │   ├── holdout_log.json         ← Holdout evaluation audit log (2 entries)
 │   ├── shuffled_label_check.txt ← Output of python train.py check
 │   ├── decisions.md             ← Decision register
-│   ├── phase_{0..5}.md          ← Phase reports
+│   ├── phase_{0..6}.md          ← Phase reports
 │   └── archive/                 ← Archived scikit-learn HistGradientBoostingClassifier run
-├── tests/                       ← 9 automated correctness tests
+├── tests/                       ← 21 automated correctness & live backend tests
 ├── notebooks/01_clean_data.ipynb
 └── docs/                        ← references.md, user_guide.md
 ```
@@ -354,7 +362,7 @@ python predict.py
 python -m pytest tests/ -v
 ```
 
-Results: **9 passed in ~14 seconds** (verified from both repo root and `tests/`).
+Results: **21 passed in ~14.5 seconds** (verified from both repo root and `tests/`).
 
 Tests cover:
 - `test_features_no_lookahead.py`: full history vs. truncated history (`0.00e+00` max diff across 200 bars)
@@ -363,6 +371,13 @@ Tests cover:
 - `test_policy_rules.py`: `opening_settle`, `horizon_past_close`, `low_confidence`, active signal bounds, required keys
 - `test_bundle_consistency.py`: `feature_list.json` vs `feat_cols` vs booster `feature_name()`, zero all-NaN columns, SHA-256 hashes
 - `test_holdout_gate.py`: `holdout_log.json` blocks repeated evaluation of same model family
+- `test_candle_builder.py`: 1-minute bar aggregation, overwrite idempotence, zero-volume VWAP fallback, late bar rejection
+- `test_finalise_order.py`: deterministic `SPY -> QQQ -> AAPL -> predictor -> scorer` finalisation sequence and missing AAPL `data_quality` rule
+- `test_signal_immutable.py`: SQLite `UPDATE`/`DELETE` abort triggers on `signals` and `baselines`
+- `test_signal_idempotent.py`: duplicate closed-bucket notification writes strictly one signal row
+- `test_scorer.py`: horizon outcome resolution, missing entry/late exit fallbacks, `baseline_results` view exclusions
+- `test_db_backup.py`: WAL-safe synchronous and async SQLite online snapshot consistency
+- `test_api_schema.py`: all 7 FastAPI REST endpoints and WebSocket `/ws` snapshot handshake
 
 ---
 
@@ -407,13 +422,20 @@ The holdout was evaluated twice (scikit-learn, then LightGBM) with no tuning in 
 
 ---
 
-## 10. Live System (Planned)
+## 10. Live System (Backend Implemented)
 
-Live backend and UI are out of scope for this repository milestone. When implemented (`config.yaml:live.*` reserved):
-- Subscribe to Alpaca IEX 5-minute closed-bar stream.
-- Assemble candles strictly after bar close (`grace_seconds=8`, `stale_seconds=90`).
-- Guarantee signal immutability (no repainting once emitted).
-- Surface clear warnings during macro events, earnings, and half-day sessions (see [`docs/user_guide.md`](file:///home/aryan/Sem_5/ML_project/docs/user_guide.md)).
+The live streaming and inference backend (`src/live/`) is implemented (Phase 4 frontend UI remains out of scope for this milestone):
+- Subscribes to Alpaca `DataFeed.IEX` 1-minute bar streams via `StockDataStream` and deterministically aggregates 5-minute candles (`grace_seconds=8`, `stale_seconds=90`).
+- Persists candles, immutable signals, baseline predictions, resolved outcomes, and health events in SQLite WAL mode (`data/live/indicator.db`) with `UPDATE`/`DELETE` immutability triggers.
+- Exposes 7 read-only REST endpoints (`/api/health`, `/api/candles`, `/api/signals`, `/api/signal/{candle_ts}`, `/api/stats`, `/api/model_info`, `/api/export.csv`) and a `/ws` WebSocket feed.
+- Run the backend server:
+  ```bash
+  uvicorn src.live.app:app --host 0.0.0.0 --port 8000
+  ```
+- Verify zero train/serve skew against historical data via full-day replay:
+  ```bash
+  python scripts/replay_day.py --day 2025-12-10
+  ```
 
 ---
 

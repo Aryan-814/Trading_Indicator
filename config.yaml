@@ -45,9 +45,15 @@ policy:
 
 cost_bps: [0.5, 1.0, 3.0]
 
-# live.* reserved for the live backend (not used in offline training/predict)
 live:
   grace_seconds: 8
   stale_seconds: 90
   min_minutes: 1
   warm_start_days: 30
+  backfill_feed: iex
+  backfill_fallback_minutes: 16
+  db_path: "data/live/indicator.db"
+  db_backup_dir: "backups"
+  lock_path: "data/live/collector.lock"
+  symbols: ["SPY", "QQQ", "AAPL"]
+  cost_bps_per_side: 1.0

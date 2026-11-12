@@ -34,13 +34,18 @@ ENV/
 .env*.local
 !.env.example
 
-# Large Data files (do not commit raw/processed market data)
+# Large Data files & runtime live DB (do not commit raw/processed market data)
 data/raw/*
 !data/raw/.gitkeep
 data/clean/*
 !data/clean/.gitkeep
 data/features/*
 !data/features/.gitkeep
+data/live/
+backups/
+*.db
+*.db-wal
+*.db-shm
 aapl_5m_clean.csv
 *.csv
 !reports/*.csv
