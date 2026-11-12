@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+import json
 import logging
 from pathlib import Path
 import sqlite3
@@ -202,17 +203,32 @@ class LivePredictor:
                 "horizon_minutes": self.horizon_minutes,
             }
 
+        dir_val = str(raw_sig.get("direction", "none"))
+        raw_conf = raw_sig.get("confidence")
+        cal_conf = raw_conf
+        if cal_conf is None and isinstance(scenarios, dict):
+            cal_conf = scenarios.get("diagnostic_confidence")
+
+        if dir_val == "none":
+            stored_confidence = None
+            quality = {"diagnostic_confidence": round(float(cal_conf), 4)} if cal_conf is not None else {}
+        else:
+            stored_confidence = float(raw_conf) if raw_conf is not None else 0.5
+            quality = {}
+
         signal_row = {
             "candle_ts": bucket_ts,
             "issued_at": issued_at or utc_now_iso(),
             "horizon_bars": int(raw_sig.get("horizon_bars", self.horizon_bars)),
-            "direction": str(raw_sig.get("direction", "none")),
-            "confidence": float(raw_sig["confidence"]) if raw_sig.get("confidence") is not None else 0.0,
+            "direction": dir_val,
+            "confidence": stored_confidence,
             "p_up": float(raw_sig["p_up"]) if raw_sig.get("p_up") is not None else 0.5,
             "meta_prob": float(raw_sig["meta_prob"]) if raw_sig.get("meta_prob") is not None else 0.0,
             "reason": raw_sig.get("reason"),
             "scenarios": scenarios,
             "drivers": raw_sig.get("drivers") or [],
+            "quality": quality,
+            "quality_json": json.dumps(quality) if quality else None,
             "feature_hash": raw_sig.get("feature_hash"),
             "model_version": self.model_version,
         }
@@ -226,17 +242,20 @@ class LivePredictor:
         issued_at: str | None = None,
     ) -> dict[str, Any] | None:
         """Record an immutable non-trade signal (data_quality or missed)."""
+        quality = {"reason": reason}
         signal_row = {
             "candle_ts": bucket_ts,
             "issued_at": issued_at or utc_now_iso(),
             "horizon_bars": self.horizon_bars,
             "direction": "none",
-            "confidence": 0.0,
+            "confidence": None,
             "p_up": 0.5,
             "meta_prob": 0.0,
             "reason": reason,
             "scenarios": None,
             "drivers": [],
+            "quality": quality,
+            "quality_json": json.dumps(quality),
             "feature_hash": None,
             "model_version": self.model_version,
         }

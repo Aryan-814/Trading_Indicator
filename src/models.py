@@ -69,6 +69,12 @@ def load_bundle(path="models/v1"):
     else:
         b["feature_list"] = {"feat_cols": feat_cols, "meta_cols": meta_cols}
 
+    analog_path = os.path.join(path, "analog_table.parquet")
+    if os.path.exists(analog_path):
+        b["analog_table"] = pd.read_parquet(analog_path)
+    else:
+        b["analog_table"] = None
+
     return b
 
 
@@ -141,16 +147,60 @@ def make_signal(b, hist):
     close = float(last["close"])
 
     v78 = float(row["vol_78"].values[0]) if "vol_78" in row and not pd.isna(row["vol_78"].values[0]) else 0.004
-    vol_bin = "low" if v78 < 0.003 else ("high" if v78 > 0.006 else "mid")
+    vol_cutoffs = thr.get("vol_cutoffs", {})
+    v_q33 = vol_cutoffs.get("v_q33", 0.001165)
+    v_q66 = vol_cutoffs.get("v_q66", 0.001649)
+    if v78 <= v_q33:
+        vol_bin = "low"
+    elif v78 <= v_q66:
+        vol_bin = "mid"
+    else:
+        vol_bin = "high"
+
     b_idx = int(last["bar_idx"])
-    if b_idx < 12:
+    if b_idx <= 11:
         time_bin = "open"
-    elif b_idx < 42:
+    elif b_idx <= 38:
         time_bin = "mid"
-    elif b_idx < 66:
+    elif b_idx <= 65:
         time_bin = "afternoon"
     else:
         time_bin = "close"
+
+    # Compute move_bin based on base quantile expected return
+    s_t = v78 * np.sqrt(h / 78) if v78 > 0 else 0.001
+    fwd_est = float(qs[1])
+    z_fwd = fwd_est / s_t
+    if z_fwd <= -1.0:
+        move_bin = "strong_down"
+    elif z_fwd <= -0.3:
+        move_bin = "mild_down"
+    elif z_fwd <= 0.3:
+        move_bin = "flat"
+    elif z_fwd <= 1.0:
+        move_bin = "mild_up"
+    else:
+        move_bin = "strong_up"
+
+    side_dir = "up" if p_up >= 0.5 else "down"
+    conf_pct = conf * 100.0
+    horizon_minutes = h * 5
+
+    narrative = None
+    if b.get("analog_table") is not None:
+        try:
+            from scenarios import lookup_analog_narrative
+            narrative = lookup_analog_narrative(
+                analog_table=b["analog_table"],
+                vol_bin=vol_bin,
+                time_bin=time_bin,
+                move_bin=move_bin,
+                side_direction=side_dir,
+                conf_pct=conf_pct,
+                horizon_min=horizon_minutes,
+            )
+        except Exception as exc:
+            warnings.warn(f"lookup_analog_narrative failed: {exc}")
 
     out["scenarios"] = {
         "bear_q10": close * float(np.exp(qs[0])),
@@ -158,7 +208,8 @@ def make_signal(b, hist):
         "bull_q90": close * float(np.exp(qs[2])),
         "regime": {"vol_bin": vol_bin, "time_bin": time_bin},
         "diagnostic_confidence": conf,
-        "lean": "up" if p_up >= 0.5 else "down",
+        "lean": side_dir,
+        "narrative": narrative,
     }
 
     # Spec 10.4: top-5 feature drivers by SHAP contribution

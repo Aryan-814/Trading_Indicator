@@ -26,6 +26,7 @@ from src.live.collector import (
     is_nyse_market_open,
     nyse_fallback,
     utc_now_iso,
+    warm_start,
     warm_start_from_parquet,
 )
 from src.live.db import (
@@ -187,6 +188,9 @@ def create_app(
         )
         app.state.collector = collector
 
+        key = alpaca_api_key or os.getenv("ALPACA_API_KEY")
+        secret = alpaca_secret_key or os.getenv("ALPACA_SECRET_KEY")
+
         # Warm start if enabled and SQLite candles is sparse (< 30 days)
         should_warm_start = enable_warm_start
         if should_warm_start is None:
@@ -197,20 +201,18 @@ def create_app(
             cnt_row = conn.execute("SELECT COUNT(*) FROM candles WHERE symbol = 'AAPL'").fetchone()
             candle_count = cnt_row[0] if cnt_row else 0
             if candle_count < 156:
-                warm_start_from_parquet(
-                    conn,
-                    parquet_path="data/clean/aapl_5m_clean.parquet",
+                warm_start(
+                    conn=conn,
+                    api_key=key,
+                    secret_key=secret,
                     symbols=tuple(cfg.get("symbols", ["AAPL", "SPY", "QQQ"])),
-                    days=int(cfg.get("warm_start_days", 35)),
+                    days=int(cfg.get("warm_start_days", 30)),
+                    parquet_path=cfg.get("data_path", "data/clean/aapl_5m_clean.parquet"),
                 )
 
             # Backfill current session signals if enabled
             if cfg.get("backfill_session_on_start", True):
                 backfill_current_session(conn, predictor=predictor, scorer=scorer, symbol="AAPL")
-
-        # Stream runner if enabled
-        key = alpaca_api_key or os.getenv("ALPACA_API_KEY")
-        secret = alpaca_secret_key or os.getenv("ALPACA_SECRET_KEY")
         if enable_stream and key and secret:
             async def run_backup() -> None:
                 await run_backup_async(db_p, backup_d)

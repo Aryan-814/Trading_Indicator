@@ -101,11 +101,36 @@
   };
 
   // Utility Functions
-  function parseIsoToEpochSeconds(isoStr) {
-    return Math.floor(new Date(isoStr).getTime() / 1000);
+  function normalizeUtcIso(isoStr) {
+    if (!isoStr) return "";
+    let s = String(isoStr).trim();
+    if (!s.endsWith("Z") && !s.includes("+") && !s.includes("-", 10)) {
+      s = s.replace(" ", "T") + "Z";
+    } else {
+      s = s.replace(" ", "T");
+    }
+    return s;
   }
 
-  // Timezone formatting per Task 3.1
+  function parseIsoToEpochSeconds(isoStr) {
+    if (typeof isoStr === "number") return isoStr;
+    const s = normalizeUtcIso(isoStr);
+    return Math.floor(new Date(s).getTime() / 1000);
+  }
+
+  function getUtcIsoForNyTime(dateStr, h, m) {
+    const parts = dateStr.split("-").map(Number);
+    const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], h, m, 0));
+    const nyHour = parseInt(
+      new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }).format(d),
+      10
+    );
+    const diffHours = (h - (nyHour % 24) + 24) % 24;
+    d.setUTCHours(d.getUTCHours() + diffHours);
+    return d.toISOString().replace(".000Z", "Z");
+  }
+
+  // Timezone formatting per Task 3.1 & Fix 3
   function formatUnixTime(unixSeconds, tz, withDate = false) {
     const d = new Date(unixSeconds * 1000);
     const opts = withDate
@@ -135,7 +160,8 @@
 
   function formatTime(isoStr, tz = state.timezone) {
     if (!isoStr) return "--:--";
-    const d = new Date(isoStr);
+    const s = normalizeUtcIso(isoStr);
+    const d = new Date(s);
     const targetTz = tz === "local" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "America/New_York";
     try {
       return new Intl.DateTimeFormat("en-US", {
@@ -241,14 +267,19 @@
 
       const epochSec = parseIsoToEpochSeconds(ts);
       const isUp = dir === "up";
-      const confPct = Math.round((sig.confidence || 0.5) * 100);
+      const confPct = Math.round((sig.confidence || sig.diagnostic_confidence || 0.5) * 100);
+
+      let markSuffix = "";
+      if (sig.correct !== null && sig.correct !== undefined) {
+        markSuffix = sig.correct === 1 ? " ✓" : " ✗";
+      }
 
       markers.push({
         time: epochSec,
         position: isUp ? "belowBar" : "aboveBar",
         color: isUp ? colors.up : colors.down,
         shape: isUp ? "arrowUp" : "arrowDown",
-        text: `${isUp ? "UP" : "DN"} ${confPct}%`,
+        text: `${isUp ? "UP" : "DN"} ${confPct}%${markSuffix}`,
         id: ts,
       });
     }
@@ -275,13 +306,13 @@
     // Determine current/latest session date
     let sessionDateStr = null;
     if (state.latestCandle) {
-      const d = new Date(state.latestCandle.ts_start);
+      const d = new Date(normalizeUtcIso(state.latestCandle.ts_start));
       sessionDateStr = d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     } else {
       sessionDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     }
 
-    // Generate 78 5-minute bucket timestamps (09:30 to 15:55 ET)
+    // Generate 78 5-minute bucket timestamps (09:30 to 15:55 ET) using accurate NY daylight offset
     const sessionBuckets = [];
     for (let barIdx = 0; barIdx < 78; barIdx++) {
       const totalMinutes = 9 * 60 + 30 + barIdx * 5;
@@ -289,14 +320,7 @@
       const m = totalMinutes % 60;
       const hStr = h.toString().padStart(2, "0");
       const mStr = m.toString().padStart(2, "0");
-
-      // Calculate approximate UTC ISO for session date + NY time
-      const utcMinutes = totalMinutes + 5 * 60;
-      const utcH = Math.floor(utcMinutes / 60);
-      const utcM = utcMinutes % 60;
-      const utcHStr = (utcH % 24).toString().padStart(2, "0");
-      const utcMStr = utcM.toString().padStart(2, "0");
-      const bucketIso = `${sessionDateStr}T${utcHStr}:${utcMStr}:00Z`;
+      const bucketIso = getUtcIsoForNyTime(sessionDateStr, h, m);
 
       sessionBuckets.push({
         barIdx,
@@ -488,10 +512,13 @@
         : Math.round((sig.confidence || 0.5) * 100);
       el.scenBaseProb.textContent = `${leanStr} (${confStr}%)`;
 
-      el.narrativeText.textContent =
-        `Model lean: ${leanStr} ${confStr}% over the next ${hMin} min (median target $${pBase}). ` +
-        `Quantile regressors bound the 10th-to-90th percentile move between $${pBear} and $${pBull}. ` +
-        `In similar past volatility regimes, continuation occurred in ~52% of sessions.`;
+      if (scen.narrative) {
+        el.narrativeText.textContent = scen.narrative;
+      } else {
+        el.narrativeText.textContent =
+          `Model lean: ${leanStr} ${confStr}% over the next ${hMin} min (median target $${pBase}). ` +
+          `Quantile regressors bound the 10th-to-90th percentile move between $${pBear} and $${pBull}.`;
+      }
     } else {
       el.scenBearPrice.textContent = "---.--";
       el.scenBasePrice.textContent = "---.--";

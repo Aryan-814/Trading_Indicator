@@ -298,6 +298,101 @@ class CandleCollector:
         return False
 
 
+def warm_start_alpaca_rest(
+    conn: sqlite3.Connection,
+    api_key: str,
+    secret_key: str,
+    symbols: tuple[str, ...] = ("AAPL", "SPY", "QQQ"),
+    days: int = 30,
+) -> int:
+    """Fetch at least 30 trading days of 5-minute bars from Alpaca REST with feed=DataFeed.IEX, adjustment=Adjustment.ALL."""
+    from datetime import timedelta
+    from alpaca.data.historical import StockHistoricalDataClient
+    from alpaca.data.requests import StockBarsRequest
+    from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
+    from alpaca.data.enums import DataFeed, Adjustment
+
+    client = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
+    now = datetime.now(tz_utc)
+    calendar_days = max(45, int(days * 1.5))
+    start_dt = now - timedelta(days=calendar_days)
+
+    req = StockBarsRequest(
+        symbol_or_symbols=list(symbols),
+        timeframe=TimeFrame(5, TimeFrameUnit.Minute),
+        start=start_dt,
+        end=now,
+        feed=DataFeed.IEX,
+        adjustment=Adjustment.ALL,
+    )
+    barset = client.get_stock_bars(req)
+    total_saved = 0
+    data_map = barset.data if hasattr(barset, "data") else {}
+    for sym in symbols:
+        bars = data_map.get(sym, [])
+        for bar in bars:
+            ts_iso = format_utc_iso(parse_utc_dt(bar.timestamp))
+            candle = {
+                "ts_start": ts_iso,
+                "symbol": sym,
+                "open": float(bar.open),
+                "high": float(bar.high),
+                "low": float(bar.low),
+                "close": float(bar.close),
+                "volume": float(bar.volume),
+                "vwap": float(bar.vwap if bar.vwap is not None else bar.close),
+                "trade_count": int(bar.trade_count or 0),
+                "bar_count": 5,
+                "source": "alpaca_rest",
+            }
+            if save_candle(conn, candle, commit=False):
+                total_saved += 1
+    conn.commit()
+    if total_saved > 0:
+        log_health_event(
+            conn,
+            event_type="warm_start_complete",
+            detail=f"Warm-started {total_saved} 5m candles from Alpaca REST across {symbols}",
+        )
+    return total_saved
+
+
+def warm_start(
+    conn: sqlite3.Connection,
+    api_key: str | None = None,
+    secret_key: str | None = None,
+    symbols: tuple[str, ...] = ("AAPL", "SPY", "QQQ"),
+    days: int = 30,
+    force_parquet: bool = False,
+    parquet_path: str | Path = "data/clean/aapl_5m_clean.parquet",
+) -> int:
+    """Warm start SQLite candles table.
+
+    Pulls from live Alpaca REST when credentials are present.
+    Falls back to offline parquet only if requested or if Alpaca fails / credentials absent.
+    """
+    if not force_parquet and api_key and secret_key:
+        try:
+            saved = warm_start_alpaca_rest(
+                conn=conn,
+                api_key=api_key,
+                secret_key=secret_key,
+                symbols=symbols,
+                days=days,
+            )
+            if saved > 0:
+                return saved
+        except Exception as exc:
+            logger.warning(f"Alpaca REST warm-start failed, falling back to parquet: {exc}")
+
+    return warm_start_from_parquet(
+        conn=conn,
+        parquet_path=parquet_path,
+        symbols=symbols,
+        days=days,
+    )
+
+
 def warm_start_from_parquet(
     conn: sqlite3.Connection,
     parquet_path: str | Path = "data/clean/aapl_5m_clean.parquet",

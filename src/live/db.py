@@ -35,12 +35,13 @@ CREATE TABLE IF NOT EXISTS signals (
     issued_at TEXT NOT NULL,
     horizon_bars INTEGER NOT NULL,
     direction TEXT NOT NULL CHECK (direction IN ('up', 'down', 'none')),
-    confidence REAL NOT NULL,
+    confidence REAL,
     p_up REAL NOT NULL,
     meta_prob REAL NOT NULL,
     reason TEXT,
     scenarios_json TEXT,
     drivers_json TEXT,
+    quality_json TEXT,
     feature_hash TEXT,
     model_version TEXT
 );
@@ -222,25 +223,33 @@ def insert_signal(conn: sqlite3.Connection, signal: dict[str, Any], commit: bool
     if drivers_json is None and "drivers" in signal:
         drivers_json = json.dumps(signal["drivers"])
 
+    quality_json = signal.get("quality_json")
+    if quality_json is None and "quality" in signal:
+        quality_json = json.dumps(signal["quality"])
+
+    conf = signal.get("confidence")
+    conf_val = float(conf) if conf is not None else None
+
     cursor = conn.execute(
         """
         INSERT OR IGNORE INTO signals (
             candle_ts, issued_at, horizon_bars, direction, confidence,
             p_up, meta_prob, reason, scenarios_json, drivers_json,
-            feature_hash, model_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            quality_json, feature_hash, model_version
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(signal["candle_ts"]),
             str(signal.get("issued_at") or utc_now_iso()),
             int(signal["horizon_bars"]),
             str(signal["direction"]),
-            float(signal["confidence"]),
+            conf_val,
             float(signal["p_up"]),
             float(signal["meta_prob"]),
             signal.get("reason"),
             scenarios_json,
             drivers_json,
+            quality_json,
             signal.get("feature_hash"),
             signal.get("model_version"),
         ),
@@ -490,6 +499,8 @@ def _decode_signal_row(row: dict[str, Any]) -> dict[str, Any]:
     """Parse JSON columns on a signal record when present."""
     raw_scenarios = row.pop("scenarios_json", None)
     raw_drivers = row.pop("drivers_json", None)
+    raw_quality = row.pop("quality_json", None)
     row["scenarios"] = json.loads(raw_scenarios) if raw_scenarios else None
     row["drivers"] = json.loads(raw_drivers) if raw_drivers else []
+    row["quality"] = json.loads(raw_quality) if raw_quality else None
     return row

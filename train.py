@@ -557,6 +557,11 @@ def run_refit(df, h, kdz):
     with open(os.path.join(od, "feature_list.json"), "w") as fh:
         json.dump({"feat_cols": feat_cols, "meta_cols": meta_cols}, fh, indent=2)
 
+    # 2. Build and save analog table
+    from scenarios import build_analog_table
+    analog_df, vol_cutoffs = build_analog_table(df, h=h, train_end=cfg["train_end"])
+    analog_df.to_parquet(os.path.join(od, "analog_table.parquet"), index=False)
+
     # 3. Thresholds
     thr = {
         "horizon_bars": h,
@@ -564,6 +569,7 @@ def run_refit(df, h, kdz):
         "tau_m": tau_f,
         "skip_first_bars": cfg["skip_first_bars"],
         "target_coverage": cfg["target_coverage"],
+        "vol_cutoffs": vol_cutoffs,
     }
     with open(os.path.join(od, "thresholds.json"), "w") as fh:
         json.dump(thr, fh, indent=2)
@@ -590,9 +596,9 @@ def run_refit(df, h, kdz):
     with open(os.path.join(od, "config_snapshot.yaml"), "w") as fh:
         yaml.dump(config_snap, fh, default_flow_style=False)
 
-    # 5. Remove stale .joblib model copies and analog_table if present
+    # 5. Remove stale .joblib model copies if present
     for stale in [
-        "primary.joblib", "meta.joblib", "analog_table.parquet",
+        "primary.joblib", "meta.joblib",
         "quantile_10.joblib", "quantile_50.joblib", "quantile_90.joblib",
     ]:
         stale_path = os.path.join(od, stale)
