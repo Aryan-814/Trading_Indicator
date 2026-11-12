@@ -106,7 +106,13 @@ def test_rest_endpoints_and_websocket_snapshot(tmp_path: Path):
         assert "text/csv" in r_csv.headers["content-type"]
         assert ts in r_csv.text
 
-        # 8. WebSocket /ws
+        # 8. GET / (Static Web UI)
+        r_ui = client.get("/")
+        assert r_ui.status_code == 200
+        assert "AAPL AI Trading Indicator" in r_ui.text
+        assert "lightweight-charts@4.2.0" in r_ui.text
+
+        # 9. WebSocket /ws
         with client.websocket_connect("/ws") as ws:
             msg = ws.receive_json()
             assert msg["type"] == "snapshot"

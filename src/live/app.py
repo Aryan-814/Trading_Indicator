@@ -406,6 +406,12 @@ def create_app(
         finally:
             await ws_manager.disconnect(websocket)
 
+    web_dir = Path(__file__).resolve().parent.parent / "web"
+    if web_dir.exists():
+        from fastapi.staticfiles import StaticFiles
+
+        application.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
+
     return application
 
 

@@ -24,7 +24,7 @@ A machine-learning trading indicator for Apple (AAPL) 5-minute candles. It predi
 7. [Configuration Reference](#7-configuration-reference)
 8. [Model Bundle](#8-model-bundle)
 9. [Performance](#9-performance)
-10. [Live System (Backend Implemented)](#10-live-system-backend-implemented)
+10. [Live System & Web UI](#10-live-system--web-ui)
 11. [Limitations](#11-limitations)
 12. [Design Decisions](#12-design-decisions)
 13. [References](#13-references)
@@ -280,12 +280,21 @@ ML_project/
 │   ├── evaluate.py              ← Wilson CI, ECE, block permutation test
 │   ├── models.py                ← load_bundle(), make_signal()
 │   ├── calibrate.py             ← Minimal stub (calibration inline in train.py)
-│   └── live/                    ← FastAPI, SQLite WAL, Alpaca IEX stream, scorer
-│       ├── db.py                ← Schema, immutability triggers, online backups
-│       ├── collector.py         ← Minute bar builder, NYSE schedule, REST backfill
-│       ├── predictor.py         ← Live inference wrapping models/v1
-│       ├── scorer.py            ← Outcome resolution, Wilson CI, ECE, baseline views
-│       └── app.py               ← FastAPI REST + WebSocket (/ws) server
+│   ├── live/                    ← FastAPI, SQLite WAL, Alpaca IEX stream, scorer
+│   │   ├── db.py                ← Schema, immutability triggers, online backups
+│   │   ├── collector.py         ← Minute bar builder, NYSE schedule, REST backfill
+│   │   ├── predictor.py         ← Live inference wrapping models/v1
+│   │   ├── scorer.py            ← Outcome resolution, Wilson CI, ECE, baseline views
+│   │   └── app.py               ← FastAPI REST + WebSocket (/ws) server
+│   └── web/                     ← Lightweight Charts v4.2.0 web UI
+│       ├── index.html           ← Responsive dashboard layout
+│       ├── app.js               ← Live WebSocket client & marker rendering
+│       └── style.css            ← Accessible dark/light financial theme
+│
+├── deploy/                      ← Production deployment configs
+│   ├── aapl_indicator.service   ← systemd unit with graceful WAL shutdown
+│   ├── nginx.conf               ← Reverse proxy with WebSocket pass-through
+│   └── runbook.md               ← Operations and troubleshooting runbook
 │
 ├── data/
 │   ├── raw/                     ← Raw parquet (gitignored)
@@ -294,17 +303,18 @@ ML_project/
 │
 ├── models/v1/                   ← Frozen LightGBM bundle (.txt + calibrator.joblib + metadata)
 ├── reports/
+│   ├── final_report.md          ← Comprehensive technical report (11 sections)
 │   ├── generated_tables.md      ← Auto-generated tables (source of all doc numbers)
 │   ├── experiments.csv          ← All 16 validation trials (labelled by model & run_id)
 │   ├── best_cfg.json            ← Selected h, kdz, total n_trials
 │   ├── holdout_log.json         ← Holdout evaluation audit log (2 entries)
 │   ├── shuffled_label_check.txt ← Output of python train.py check
 │   ├── decisions.md             ← Decision register
-│   ├── phase_{0..6}.md          ← Phase reports
+│   ├── phase_{0..9}.md          ← Phase progress reports
 │   └── archive/                 ← Archived scikit-learn HistGradientBoostingClassifier run
-├── tests/                       ← 21 automated correctness & live backend tests
+├── tests/                       ← 24 automated correctness & live backend tests
 ├── notebooks/01_clean_data.ipynb
-└── docs/                        ← references.md, user_guide.md
+└── docs/                        ← user_guide.md, references.md, demo_script.md
 ```
 
 ---
@@ -362,7 +372,7 @@ python predict.py
 python -m pytest tests/ -v
 ```
 
-Results: **21 passed in ~14.5 seconds** (verified from both repo root and `tests/`).
+Results: **24 passed in ~15 seconds** (verified from both repo root and `tests/`).
 
 Tests cover:
 - `test_features_no_lookahead.py`: full history vs. truncated history (`0.00e+00` max diff across 200 bars)
@@ -377,7 +387,10 @@ Tests cover:
 - `test_signal_idempotent.py`: duplicate closed-bucket notification writes strictly one signal row
 - `test_scorer.py`: horizon outcome resolution, missing entry/late exit fallbacks, `baseline_results` view exclusions
 - `test_db_backup.py`: WAL-safe synchronous and async SQLite online snapshot consistency
-- `test_api_schema.py`: all 7 FastAPI REST endpoints and WebSocket `/ws` snapshot handshake
+- `test_api_schema.py`: all 7 FastAPI REST endpoints, static web UI mount, and WebSocket `/ws` snapshot handshake
+- `test_marker_order.py`: Lightweight Charts v4 marker chronological ordering and deduplication
+- `test_no_hardcoded_horizon.py`: guarantees dynamic horizon propagation without hardcoded literal strings
+- `test_nyse_calendar_2026.py`: Thanksgiving, Black Friday, Christmas Eve, Christmas Day holiday and early close boundaries
 
 ---
 
@@ -422,17 +435,23 @@ The holdout was evaluated twice (scikit-learn, then LightGBM) with no tuning in 
 
 ---
 
-## 10. Live System (Backend Implemented)
+## 10. Live System & Web UI
 
-The live streaming and inference backend (`src/live/`) is implemented (Phase 4 frontend UI remains out of scope for this milestone):
-- Subscribes to Alpaca `DataFeed.IEX` 1-minute bar streams via `StockDataStream` and deterministically aggregates 5-minute candles (`grace_seconds=8`, `stale_seconds=90`).
-- Persists candles, immutable signals, baseline predictions, resolved outcomes, and health events in SQLite WAL mode (`data/live/indicator.db`) with `UPDATE`/`DELETE` immutability triggers.
-- Exposes 7 read-only REST endpoints (`/api/health`, `/api/candles`, `/api/signals`, `/api/signal/{candle_ts}`, `/api/stats`, `/api/model_info`, `/api/export.csv`) and a `/ws` WebSocket feed.
-- Run the backend server:
+The live streaming backend (`src/live/`) and interactive web dashboard (`src/web/`) are fully implemented:
+- **Streaming Pipeline**: Subscribes to Alpaca `DataFeed.IEX` 1-minute bar streams via `StockDataStream` and deterministically aggregates 5-minute candles (`grace_seconds=8`, `stale_seconds=90`).
+- **Persistence & Immutability**: Stores candles, immutable signals, baseline predictions, resolved outcomes, and health events in SQLite WAL mode (`data/live/indicator.db`) with `BEFORE UPDATE` and `BEFORE DELETE` triggers.
+- **REST & WebSocket API**: Exposes 7 read-only REST endpoints (`/api/health`, `/api/candles`, `/api/signals`, `/api/signal/{candle_ts}`, `/api/stats`, `/api/model_info`, `/api/export.csv`) and a `/ws` WebSocket feed.
+- **TradingView Chart UI**: Served at `http://localhost:8000/`, featuring:
+  - Lightweight Charts v4.2.0 candlestick chart with chronologically sorted directional markers.
+  - Continuous signal history strip below the chart.
+  - One-second readable current signal card with live countdown and dynamic horizon.
+  - Five tabbed drawers: *Scenarios* (quantile targets & analog narrative), *Why* (feature drivers), *Log* (trade history & CSV export), *Performance* (Wilson intervals, baseline comparisons, cost sensitivity), and *Guide*.
+  - Accessible Blue/Orange vs Green/Red palettes and Dark/Light themes.
+- **Run the backend and UI**:
   ```bash
   uvicorn src.live.app:app --host 0.0.0.0 --port 8000
   ```
-- Verify zero train/serve skew against historical data via full-day replay:
+- **Verify zero train/serve skew via full-day replay**:
   ```bash
   python scripts/replay_day.py --day 2025-12-10
   ```
