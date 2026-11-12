@@ -43,7 +43,7 @@ def pull_symbol_bars(client, symbol, start="2020-08-03", end=None, out_dir="data
     return df
 
 
-def pull_all_symbols(symbols=("AAPL", "SPY", "QQQ"), start="2020-08-03", end=None, out_dir="data/raw"):
+def pull_all_symbols(symbols=("AAPL",), start="2020-08-03", end=None, out_dir="data/raw"):
     load_dotenv()
     key = os.environ.get("ALPACA_API_KEY")
     secret = os.environ.get("ALPACA_SECRET_KEY")
@@ -59,7 +59,7 @@ def pull_all_symbols(symbols=("AAPL", "SPY", "QQQ"), start="2020-08-03", end=Non
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pull historical 5-minute bars from Alpaca")
-    parser.add_argument("--symbols", nargs="+", default=["AAPL", "SPY", "QQQ"], help="Symbols to pull")
+    parser.add_argument("--symbols", nargs="+", default=["AAPL"], help="Symbols to pull")
     parser.add_argument("--start", default="2020-08-03", help="Start date YYYY-MM-DD")
     parser.add_argument("--end", default=None, help="End date YYYY-MM-DD")
     parser.add_argument("--out-dir", default="data/raw", help="Output directory")

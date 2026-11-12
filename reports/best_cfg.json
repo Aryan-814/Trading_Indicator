@@ -1,7 +1,7 @@
 {
   "horizon_bars": 12,
   "kdz": 0.3,
-  "trial_id": 6,
-  "n_trials": 6
+  "trial_id": 16,
+  "run_id": "lgb_d6ead9",
+  "n_trials": 16
 }
-

@@ -1,54 +1,30 @@
-"""Purged walk-forward cross-validation splitter per spec section 8.2 & Appendix B."""
-import numpy as np
+"""Walk-forward block splitting per spec section 8.2.
+
+Labels never cross a day boundary, so dropping all training days on or
+after the first day of the test quarter is a complete purge — no extra
+embargo is needed.
+"""
 import pandas as pd
 
 
-class PurgedWalkForwardSplitter:
-    """Purged Walk-Forward cross-validation with embargo.
+def walk_forward_blocks(df, min_q=4):
+    """Yield (train_idx, test_idx) for each quarter index >= min_q.
 
-    Ensures no training row's label window [t, t+h] overlaps a test block,
-    and excludes an embargo of h bars following test boundaries.
+    Parameters
+    ----------
+    df : DataFrame with 'day' (YYYY-MM-DD string) and 'q' (quarter string).
+    min_q : int — minimum number of prior quarters before first test block.
+
+    Yields
+    ------
+    train_idx, test_idx : numpy arrays of integer positions into df.index
     """
-
-    def __init__(self, block="quarter", embargo_bars=6, horizon_bars=6):
-        self.block = block
-        self.embargo_bars = embargo_bars
-        self.horizon_bars = horizon_bars
-
-    def split(self, df):
-        """Yield (train_indices, test_indices) for each consecutive block.
-
-        Parameters
-        ----------
-        df : DataFrame containing 'day' (YYYY-MM-DD string or datetime)
-             and 'bar_idx' or sorted chronological index.
-        """
-        days = pd.to_datetime(df["day"])
-        if self.block == "quarter":
-            periods = days.dt.to_period("Q").astype(str)
-        elif self.block == "month":
-            periods = days.dt.to_period("M").astype(str)
-        else:
-            raise ValueError(f"Unknown block type: {self.block}")
-
-        unique_periods = sorted(periods.unique())
-
-        for i in range(1, len(unique_periods)):
-            test_period = unique_periods[i]
-            test_mask = periods == test_period
-            test_indices = df.index[test_mask].values
-
-            test_start_day = df.loc[test_mask, "day"].min()
-
-            # Train rows must strictly precede test_start_day
-            # Since labels are intraday and do not cross days,
-            # dropping day >= test_start_day prevents any label overlap.
-            train_mask = df["day"] < test_start_day
-
-            # Embargo: drop the last embargo_bars of training data if on same day,
-            # or if across days, train_mask ending before test_start_day satisfies purge.
-            train_indices = df.index[train_mask].values
-
-            if len(train_indices) > 0 and len(test_indices) > 0:
-                yield train_indices, test_indices
-
+    qs = sorted(df["q"].unique())
+    for i in range(min_q, len(qs)):
+        test_mask = df["q"] == qs[i]
+        test_start_day = df.loc[test_mask, "day"].min()
+        train_mask = df["day"] < test_start_day
+        train_idx = df.index[train_mask].values
+        test_idx = df.index[test_mask].values
+        if len(train_idx) > 0 and len(test_idx) > 0:
+            yield train_idx, test_idx

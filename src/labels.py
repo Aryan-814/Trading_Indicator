@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 
-def make_labels(d, h=6, kdz=0.15):
+def make_labels(d, h=12, kdz=0.30, vol_span=78):
     """Compute primary training labels and scoring labels for bar t.
 
     Parameters
@@ -25,7 +25,7 @@ def make_labels(d, h=6, kdz=0.15):
     fwd = np.log(g["close"].shift(-h) / d["close"])
 
     # Exponentially weighted standard deviation of ret_1 (span 78, causal)
-    sigma = d["ret_1"].ewm(span=78, min_periods=30).std()
+    sigma = d["ret_1"].ewm(span=vol_span, min_periods=30).std()
     s = sigma * np.sqrt(h)
 
     # Primary label with volatility-scaled dead-zone

@@ -1,4 +1,5 @@
 asset: AAPL
+data_path: data/clean/aapl_5m_clean.parquet
 feed: iex
 holdout_start: '2026-01-01'
 horizon_bars: 12
@@ -21,7 +22,7 @@ primary_params:
   num_leaves: 15
   random_state: 42
   reg_alpha: 0.1
-  reg_lambda: 5
+  reg_lambda: 5.0
   subsample: 0.7
   subsample_freq: 1
   verbose: -1
@@ -40,3 +41,4 @@ timeframe_minutes: 5
 train_end: '2024-12-31'
 val_end: '2025-12-31'
 val_start: '2025-01-01'
+vol_span: 78

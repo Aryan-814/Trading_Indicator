@@ -1,20 +1,21 @@
-"""Mandatory correctness test 1 (section 8.4):
+"""Mandatory correctness test 1 (spec section 8.4):
 Features from full history equal features from history truncated at the bar.
 """
-import sys
-import os
+from pathlib import Path
 import numpy as np
-
-sys.path.insert(0, os.path.abspath("src"))
+import pytest
 from features import load_bars, make_features
 
 
+ROOT = Path(__file__).resolve().parent.parent
+DATA = str(ROOT / "data" / "clean" / "aapl_5m_clean.parquet")
+
+
 def test_features_no_lookahead():
-    d = load_bars("aapl_5m_clean.csv")
+    d = load_bars(DATA)
     full = make_features(d)
 
     rng = np.random.default_rng(42)
-    # Pick 200 random bars beyond the warm-up window
     sample_bars = rng.choice(np.arange(1000, len(d)), size=200, replace=False)
 
     worst_diff = 0.0

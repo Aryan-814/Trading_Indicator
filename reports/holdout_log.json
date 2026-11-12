@@ -1,0 +1,16 @@
+[
+  {
+    "model": "hist_gb",
+    "date": "2026-11-09",
+    "git_commit": "pre-lightgbm",
+    "note": "Holdout evaluation 1 \u2014 scikit-learn HistGradientBoostingClassifier run. Validation selective@20% = 53.34%, holdout selective@20% = 49.67%."
+  },
+  {
+    "model": "lightgbm",
+    "date": "2026-11-12",
+    "git_commit": "464110a9e8690295be2afff4e140d790f7294d0f",
+    "horizon_bars": 12,
+    "kdz": 0.3,
+    "note": "Holdout evaluation 2 \u2014 LightGBM run."
+  }
+]

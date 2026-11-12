@@ -1,22 +1,21 @@
 """Feature calculation per spec section 6.
+
 Shared between training and live serving to prevent mismatch.
+24 features total; no SPY/QQQ market context (data not available).
 """
 import os
 import numpy as np
 import pandas as pd
 
-ret_ks = [3, 6, 12, 24, 78]
+ret_ks = [3, 6, 12, 24]
 
 feat_cols = [
-    "ret_1", "ret_3", "ret_6", "ret_12", "ret_24", "ret_78",
+    "ret_1", "ret_3", "ret_6", "ret_12", "ret_24",
     "gap", "day_ret", "vol_12", "vol_78",
     "range_1", "range_12", "vwap_dist", "sess_vwap_dist",
     "rel_volume_log", "rel_tc_log",
     "tod", "tod_sin", "tod_cos", "dow", "is_half", "bars_left",
     "prev_day_ret", "prev_day_range", "rsi_14",
-    "spy_ret_1", "spy_ret_6", "spy_ret_12",
-    "qqq_ret_1", "qqq_ret_6", "qqq_ret_12",
-    "spy_vol_12", "aapl_vs_spy_6",
 ]
 
 meta_cols = [
@@ -26,18 +25,23 @@ meta_cols = [
 
 
 def load_bars(path):
+    """Load a bar file; resolves relative paths from the project root."""
     if not os.path.exists(path):
         for candidate in [os.path.join("..", path), os.path.join("data", "clean", path)]:
             if os.path.exists(candidate):
                 path = candidate
                 break
-    d = pd.read_csv(path) if path.endswith(".csv") else pd.read_parquet(path)
+    if path.endswith(".csv"):
+        d = pd.read_csv(path)
+    else:
+        d = pd.read_parquet(path)
     d["timestamp"] = pd.to_datetime(d["timestamp"], utc=True)
     d = d.sort_values("timestamp").reset_index(drop=True)
     return d
 
 
 def wilder_rsi(close, n=14):
+    """Wilder RSI using EWM (causal, no look-ahead)."""
     diff = close.diff()
     up = diff.clip(lower=0)
     dn = (-diff).clip(lower=0)
@@ -47,9 +51,18 @@ def wilder_rsi(close, n=14):
     return 100 - 100 / (1 + rs)
 
 
-def make_features(d, spy=None, qqq=None):
-    """Build features for all bars in d.
-    Guaranteed: feature row at bar t uses ONLY bars <= t (no look-ahead).
+def make_features(d):
+    """Build the 24-column feature frame for all bars in d.
+
+    Guaranteed: feature at bar t uses only bars <= t (no look-ahead).
+
+    Parameters
+    ----------
+    d : clean DataFrame from load_bars / clean.py
+
+    Returns
+    -------
+    DataFrame with columns == feat_cols, same index as d.
     """
     g = d.groupby("day")
     f = pd.DataFrame(index=d.index)
@@ -96,27 +109,4 @@ def make_features(d, spy=None, qqq=None):
 
     f["rsi_14"] = wilder_rsi(d["close"], 14)
 
-    # Market context features
-    for sym, sym_df in [("spy", spy), ("qqq", qqq)]:
-        if sym_df is not None and len(sym_df) > 0:
-            m = sym_df.set_index("timestamp")[["close", "ret_1"]].reindex(
-                d["timestamp"].values
-            )
-            for k in [1, 6, 12]:
-                s_ref = m["close"].shift(k)
-                fk = np.log(m["close"].values / s_ref.values)
-                f[sym + "_ret_" + str(k)] = fk
-        else:
-            for k in [1, 6, 12]:
-                f[sym + "_ret_" + str(k)] = np.nan
-
-    if spy is not None and len(spy) > 0:
-        m = spy.set_index("timestamp")["ret_1"].reindex(d["timestamp"].values)
-        f["spy_vol_12"] = pd.Series(m.values, index=d.index).rolling(12).std()
-    else:
-        f["spy_vol_12"] = np.nan
-
-    f["aapl_vs_spy_6"] = f["ret_6"] - f["spy_ret_6"]
-
     return f[feat_cols]
-

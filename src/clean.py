@@ -1,8 +1,19 @@
 """Data cleaning rules per spec section 5.3."""
 import os
+import yaml
 import numpy as np
 import pandas as pd
 from datetime import time as dtime
+
+
+def _canonical_out_path():
+    cfg_path = "config.yaml"
+    if os.path.exists(cfg_path):
+        with open(cfg_path) as fh:
+            y = yaml.safe_load(fh) or {}
+        if "data_path" in y:
+            return y["data_path"]
+    return "data/clean/aapl_5m_clean.parquet"
 
 
 def clean_bars(raw_path_or_df):
@@ -51,7 +62,7 @@ def clean_bars(raw_path_or_df):
         np.log(df["close"] / prev_close),
     )
 
-    # 7. Relative volume and trade count vs past 20-day median at same bar_idx
+    # 7. Relative volume and trade count vs past 20-day median (min_periods=10) at same bar_idx
     def past_median(s):
         return s.shift(1).rolling(20, min_periods=10).median()
 
@@ -67,7 +78,7 @@ def clean_bars(raw_path_or_df):
     assert (df["high"] >= df[["open", "close"]].max(axis=1) - 1e-6).all(), "High < max(open, close)"
     assert (df["low"] <= df[["open", "close"]].min(axis=1) + 1e-6).all(), "Low > min(open, close)"
 
-    # Drop warm-up rows
+    # Drop warm-up rows (first 10 trading days before 2020-08-17)
     req_cols = [c for c in ["rel_volume", "rel_trade_count"] if c in df.columns]
     df = df.dropna(subset=req_cols).reset_index(drop=True)
 
@@ -85,8 +96,12 @@ if __name__ == "__main__":
     if os.path.exists(raw_path):
         cleaned = clean_bars(raw_path)
         print("Cleaned shape:", cleaned.shape)
-        cleaned.to_parquet("data/clean/aapl_5m_clean.parquet", index=False)
-        print("Saved to data/clean/aapl_5m_clean.parquet")
+        out_path = _canonical_out_path()
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        if out_path.endswith(".csv"):
+            cleaned.to_csv(out_path, index=False)
+        else:
+            cleaned.to_parquet(out_path, index=False)
+        print("Saved to", out_path)
     else:
         print(f"Raw file {raw_path} not found.")
-

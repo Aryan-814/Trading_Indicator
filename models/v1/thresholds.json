@@ -1,11 +1,7 @@
 {
   "horizon_bars": 12,
   "kdz": 0.3,
-  "tau_m": 0.523098819849851,
+  "tau_m": 0.521784452254343,
   "skip_first_bars": 3,
-  "target_coverage": 0.2,
-  "vol_cutoffs": {
-    "v_q33": 0.0011651266214337728,
-    "v_q66": 0.001648896427607788
-  }
+  "target_coverage": 0.2
 }

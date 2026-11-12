@@ -5,7 +5,6 @@
     "ret_6",
     "ret_12",
     "ret_24",
-    "ret_78",
     "gap",
     "day_ret",
     "vol_12",
@@ -24,15 +23,7 @@
     "bars_left",
     "prev_day_ret",
     "prev_day_range",
-    "rsi_14",
-    "spy_ret_1",
-    "spy_ret_6",
-    "spy_ret_12",
-    "qqq_ret_1",
-    "qqq_ret_6",
-    "qqq_ret_12",
-    "spy_vol_12",
-    "aapl_vs_spy_6"
+    "rsi_14"
   ],
   "meta_cols": [
     "p_up",

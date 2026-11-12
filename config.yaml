@@ -1,45 +1,53 @@
 asset: AAPL
 timeframe_minutes: 5
 feed: iex
+data_path: "data/clean/aapl_5m_clean.parquet"
+
 horizon_bars: 12
+
 label:
-  type: fixed_horizon        # or triple_barrier
   kdz: 0.30
   vol_span: 78
+
 periods:
   train_end: "2024-12-31"
   val_start: "2025-01-01"
   val_end: "2025-12-31"
   holdout_start: "2026-01-01"
+
 cv:
   block: quarter
-  embargo_bars: 12
+  min_q: 4
+
 primary:
   num_leaves: 15
   max_depth: 5
   learning_rate: 0.03
   n_estimators: 200
-  early_stopping: 50
   min_child_samples: 300
   subsample: 0.7
   colsample_bytree: 0.7
-  reg_lambda: 5
+  reg_lambda: 5.0
   reg_alpha: 0.1
   seed: 42
+
 meta:
   num_leaves: 7
+  max_depth: 3
+  learning_rate: 0.03
+  n_estimators: 100
   min_child_samples: 500
+  reg_lambda: 10.0
+
 policy:
   target_coverage: 0.20
   skip_first_bars: 3
-conformal:
-  online: false
-  gamma: 0.005
-  alpha_target: 0.2
-costs_bps_per_side: 1.0
+
+cost_bps: [0.5, 1.0, 3.0]
+
+# live.* reserved for the live backend (not used in offline training/predict)
 live:
   grace_seconds: 8
   stale_seconds: 90
   min_minutes: 1
   warm_start_days: 30
-

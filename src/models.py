@@ -1,37 +1,37 @@
-"""Model loading helpers per spec section 9.7.
+"""Model loading and live signal generation per spec section 9.7.
 
-This module exposes load_bundle() and make_signal() that are shared between
-predict.py and any downstream consumer.  predict.py is the canonical entry
-point; this module houses the reusable logic so tests can import it without
-running __main__.
+This module is the single source of truth for load_bundle() and make_signal().
+predict.py is a thin CLI that imports from here.
 """
-# NOTE: predict.py duplicates load_bundle / make_signal for standalone use.
-# If you change the bundle layout here, update predict.py as well.
 import hashlib
+import json
 import os
+import sys
+import warnings
+
+# Ensure src/ is importable when loaded from any working directory.
+_src_dir = os.path.dirname(os.path.abspath(__file__))
+if _src_dir not in sys.path:
+    sys.path.insert(0, _src_dir)
 
 import joblib
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
 
-try:
-    from features import feat_cols, meta_cols, make_features  # noqa: F401
-except ImportError:  # allow import without src/ on path (tests add it)
-    feat_cols = []
-    meta_cols = []
+from features import feat_cols, meta_cols, make_features
 
 
 def load_bundle(path="models/v1"):
     """Load a trained model bundle from *path*.
 
-    Supports both LightGBM native format (.txt) and sklearn joblib format
-    for backwards compatibility.
+    Supports only LightGBM native format (.txt). The sklearn fallback
+    for primary/meta was removed; only calibrator.joblib remains as joblib.
 
     Parameters
     ----------
     path : str
-        Directory containing the bundle files produced by train.py refit.
+        Directory produced by train.py refit.
 
     Returns
     -------
@@ -40,28 +40,22 @@ def load_bundle(path="models/v1"):
     if not os.path.exists(path) and os.path.exists(os.path.join("..", path)):
         path = os.path.join("..", path)
 
-    b: dict = {}
+    b = {}
     txt_primary = os.path.join(path, "primary.txt")
-    if os.path.exists(txt_primary):
-        b["format"] = "lightgbm"
-        b["primary"] = lgb.Booster(model_file=txt_primary)
-        b["meta"] = lgb.Booster(model_file=os.path.join(path, "meta.txt"))
-        b["q"] = {
-            a: lgb.Booster(model_file=os.path.join(path, f"quantile_{a}.txt"))
-            for a in (10, 50, 90)
-        }
-    else:
-        b["format"] = "sklearn"
-        b["primary"] = joblib.load(os.path.join(path, "primary.joblib"))
-        b["meta"] = joblib.load(os.path.join(path, "meta.joblib"))
-        b["q"] = {
-            a: joblib.load(os.path.join(path, f"quantile_{a}.joblib"))
-            for a in (10, 50, 90)
-        }
+    if not os.path.exists(txt_primary):
+        raise FileNotFoundError(
+            f"primary.txt not found in {path}. Run 'python train.py refit' first."
+        )
+
+    b["format"] = "lightgbm"
+    b["primary"] = lgb.Booster(model_file=txt_primary)
+    b["meta"] = lgb.Booster(model_file=os.path.join(path, "meta.txt"))
+    b["q"] = {
+        a: lgb.Booster(model_file=os.path.join(path, f"quantile_{a}.txt"))
+        for a in (10, 50, 90)
+    }
 
     b["cal"] = joblib.load(os.path.join(path, "calibrator.joblib"))
-
-    import json
 
     with open(os.path.join(path, "thresholds.json")) as fh:
         b["thr"] = json.load(fh)
@@ -78,27 +72,13 @@ def load_bundle(path="models/v1"):
     return b
 
 
-def _predict_primary(b, row, used_feat):
-    if b["format"] == "lightgbm":
-        return float(b["primary"].predict(row[used_feat])[0])
-    return float(b["primary"].predict_proba(row[used_feat])[0, 1])
-
-
-def _predict_meta(b, mrow):
-    if b["format"] == "lightgbm":
-        return float(b["meta"].predict(mrow)[0])
-    return float(b["meta"].predict_proba(mrow)[0, 1])
-
-
-def make_signal(b, hist, spy=None, qqq=None):
+def make_signal(b, hist):
     """Generate a live signal for the last bar in *hist*.
 
     Parameters
     ----------
     b    : bundle dict from load_bundle()
     hist : DataFrame of clean 5-min bars up to and including the current bar
-    spy  : optional SPY bar DataFrame aligned to AAPL timestamps
-    qqq  : optional QQQ bar DataFrame aligned to AAPL timestamps
 
     Returns
     -------
@@ -122,7 +102,7 @@ def make_signal(b, hist, spy=None, qqq=None):
         "drivers": [],
     }
 
-    f = make_features(hist, spy=spy, qqq=qqq)
+    f = make_features(hist)
     row = f.iloc[[-1]].copy()
 
     used_feat = b.get("feature_list", {}).get("feat_cols", feat_cols)
@@ -139,7 +119,7 @@ def make_signal(b, hist, spy=None, qqq=None):
         out["reason"] = "opening_settle"
         return out
 
-    p_up = _predict_primary(b, row, used_feat)
+    p_up = float(b["primary"].predict(row[used_feat])[0])
     side = 1 if p_up >= 0.5 else -1
 
     mrow = pd.DataFrame(
@@ -156,17 +136,14 @@ def make_signal(b, hist, spy=None, qqq=None):
         }
     )[used_meta]
 
-    m = _predict_meta(b, mrow)
+    m = float(b["meta"].predict(mrow)[0])
     conf = float(b["cal"].predict([m])[0])
 
     out["p_up"] = p_up
     out["meta_prob"] = m
 
-    # Quantile price targets
-    if b["format"] == "lightgbm":
-        raw_qs = [float(b["q"][a].predict(row[used_feat])[0]) for a in (10, 50, 90)]
-    else:
-        raw_qs = [float(b["q"][a].predict(row[used_feat])[0]) for a in (10, 50, 90)]
+    # Quantile price targets — Bear / Base / Bull
+    raw_qs = [float(b["q"][a].predict(row[used_feat])[0]) for a in (10, 50, 90)]
     qs = np.sort(raw_qs)
     close = float(last["close"])
     out["scenarios"] = {
@@ -176,26 +153,27 @@ def make_signal(b, hist, spy=None, qqq=None):
     }
 
     # Spec 10.4: top-5 feature drivers by SHAP contribution
-    if b["format"] == "lightgbm":
-        try:
-            contribs = b["primary"].predict(row[used_feat], pred_contrib=True)[0]
-            feat_contribs = contribs[:-1]  # last element is bias
-            top_idx = np.argsort(np.abs(feat_contribs))[-5:][::-1]
-            out["drivers"] = [
-                {
-                    "feature": used_feat[i],
-                    "contribution": float(feat_contribs[i]),
-                    "value": (
-                        float(row[used_feat[i]].values[0])
-                        if not pd.isna(row[used_feat[i]].values[0])
-                        else None
-                    ),
-                }
-                for i in top_idx
-            ]
-        except Exception:
-            out["drivers"] = []
+    try:
+        contribs = b["primary"].predict(row[used_feat], pred_contrib=True)[0]
+        feat_contribs = contribs[:-1]  # last element is bias
+        top_idx = np.argsort(np.abs(feat_contribs))[-5:][::-1]
+        out["drivers"] = [
+            {
+                "feature": used_feat[i],
+                "contribution": float(feat_contribs[i]),
+                "value": (
+                    float(row[used_feat[i]].values[0])
+                    if not pd.isna(row[used_feat[i]].values[0])
+                    else None
+                ),
+            }
+            for i in top_idx
+        ]
+    except (ValueError, KeyError, AttributeError) as exc:
+        warnings.warn(f"pred_contrib failed: {exc}")
+        out["drivers"] = []
 
+    # Gate: signal only when raw meta prob >= tau_m
     if m >= thr["tau_m"]:
         out["direction"] = "up" if side == 1 else "down"
         out["confidence"] = conf
@@ -203,4 +181,3 @@ def make_signal(b, hist, spy=None, qqq=None):
         out["reason"] = "low_confidence"
 
     return out
-
