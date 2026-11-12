@@ -82,6 +82,10 @@
     <aside class="sidebar-section">
       <!-- Current Signal Card (1-Second Readability) -->
       <div class="signal-card" id="current-signal-card">
+        <div id="historical-inspect-banner" class="historical-banner hidden">
+          <span>Viewing historical: <strong id="inspect-time">--:-- ET</strong></span>
+          <button id="btn-return-live" class="btn btn-sm btn-return">Return to Live</button>
+        </div>
         <div class="signal-card-header">
           <span class="card-title">CURRENT SIGNAL</span>
           <span class="card-ts" id="signal-candle-ts">--:-- ET</span>
@@ -110,6 +114,10 @@
           <div class="detail-row">
             <span class="detail-label">Status:</span>
             <span class="detail-value" id="signal-reason-text">Awaiting next candle</span>
+          </div>
+          <div class="detail-row" id="row-diagnostic-lean">
+            <span class="detail-label">Diagnostic Lean:</span>
+            <span class="detail-value" id="signal-diagnostic-lean">--</span>
           </div>
         </div>
       </div>
@@ -147,6 +155,9 @@
           <p id="narrative-text" class="narrative-text">
             Awaiting active signal to generate empirical analog projection...
           </p>
+          <div id="narrative-policy-note" class="narrative-note hidden" style="margin-top: 8px; color: var(--color-text-dim); font-style: italic;">
+            Note: Horizon extends past the 16:00 ET regular session close; directional signal suppressed by policy.
+          </div>
         </div>
         <div class="panel-disclaimer">
           Model quantile estimate based on historical volatility. Not a price guarantee.

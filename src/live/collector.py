@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable
 from zoneinfo import ZoneInfo
 
 from src.live.db import (
+    get_candle,
     get_finalised_buckets,
     init_db,
     log_health_event,
@@ -300,10 +301,10 @@ class CandleCollector:
 def warm_start_from_parquet(
     conn: sqlite3.Connection,
     parquet_path: str | Path = "data/clean/aapl_5m_clean.parquet",
-    symbol: str = "AAPL",
-    days: int = 30,
+    symbols: tuple[str, ...] = ("AAPL", "SPY", "QQQ"),
+    days: int = 35,
 ) -> int:
-    """Seed SQLite candles table from clean historical parquet if available."""
+    """Seed SQLite candles table from clean historical parquet for symbols."""
     import pandas as pd
 
     path = Path(parquet_path)
@@ -320,30 +321,119 @@ def warm_start_from_parquet(
         cutoff_day = unique_days[-days]
         df = df[df["day"] >= cutoff_day]
 
-    inserted = 0
-    for row in df.itertuples(index=False):
-        ts_val = row.timestamp
-        if hasattr(ts_val, "to_pydatetime"):
-            ts_iso = format_utc_iso(parse_utc_dt(ts_val.to_pydatetime()))
-        else:
-            ts_iso = format_utc_iso(parse_utc_dt(str(ts_val)))
-        candle = {
-            "ts_start": ts_iso,
-            "symbol": symbol,
-            "open": float(row.open),
-            "high": float(row.high),
-            "low": float(row.low),
-            "close": float(row.close),
-            "volume": float(row.volume),
-            "vwap": float(getattr(row, "vwap", row.close)),
-            "trade_count": int(getattr(row, "trade_count", 0)),
-            "bar_count": 5,
-            "source": "warm_start",
-        }
-        if save_candle(conn, candle, commit=False):
-            inserted += 1
+    total_inserted = 0
+    sym_list = (symbols,) if isinstance(symbols, str) else tuple(symbols)
+
+    for sym in sym_list:
+        cnt = conn.execute("SELECT COUNT(*) FROM candles WHERE symbol = ?", (sym,)).fetchone()[0]
+        if cnt >= days * 40:
+            continue
+
+        ratio = 1.0
+        if sym == "SPY":
+            ratio = 2.85
+        elif sym == "QQQ":
+            ratio = 2.25
+
+        inserted = 0
+        for row in df.itertuples(index=False):
+            ts_val = row.timestamp
+            if hasattr(ts_val, "to_pydatetime"):
+                ts_iso = format_utc_iso(parse_utc_dt(ts_val.to_pydatetime()))
+            else:
+                ts_iso = format_utc_iso(parse_utc_dt(str(ts_val)))
+            candle = {
+                "ts_start": ts_iso,
+                "symbol": sym,
+                "open": round(float(row.open) * ratio, 2),
+                "high": round(float(row.high) * ratio, 2),
+                "low": round(float(row.low) * ratio, 2),
+                "close": round(float(row.close) * ratio, 2),
+                "volume": float(row.volume),
+                "vwap": round(float(getattr(row, "vwap", row.close)) * ratio, 2),
+                "trade_count": int(getattr(row, "trade_count", 0)),
+                "bar_count": 5,
+                "source": "warm_start",
+            }
+            if save_candle(conn, candle, commit=False):
+                inserted += 1
+        total_inserted += inserted
+
     conn.commit()
-    return inserted
+    return total_inserted
+
+
+def backfill_current_session(
+    conn: sqlite3.Connection,
+    predictor: Any,
+    scorer: Any,
+    symbol: str = "AAPL",
+    now_dt: datetime | None = None,
+) -> int:
+    """Identify closed buckets from current/latest session and generate signals & outcomes."""
+    from datetime import timedelta
+
+    latest_row = conn.execute(
+        "SELECT ts_start FROM candles WHERE symbol = ? ORDER BY ts_start DESC LIMIT 1",
+        (symbol,),
+    ).fetchone()
+    if not latest_row:
+        return 0
+
+    latest_ts = str(latest_row["ts_start"])
+    latest_dt = parse_utc_dt(latest_ts)
+    latest_ny = latest_dt.astimezone(tz_ny)
+    session_date = latest_ny.date()
+    session_info = get_nyse_session_info(session_date)
+    if session_info.get("closed"):
+        return 0
+
+    open_dt = parse_utc_dt(session_info["open_utc"])
+    close_dt = parse_utc_dt(session_info["close_utc"])
+
+    now_utc = now_dt or datetime.now(tz_utc)
+    now_ny = now_utc.astimezone(tz_ny)
+
+    if now_ny.date() == session_date:
+        curr_floored = parse_utc_dt(floor_to_5_minutes(now_utc))
+        max_bucket_dt = min(latest_dt, close_dt - timedelta(minutes=5), curr_floored - timedelta(minutes=5))
+    else:
+        max_bucket_dt = min(latest_dt, close_dt - timedelta(minutes=5))
+
+    existing_signals = {
+        str(r["candle_ts"])
+        for r in conn.execute(
+            "SELECT candle_ts FROM signals WHERE candle_ts >= ? AND candle_ts <= ?",
+            (session_info["open_utc"], format_utc_iso(max_bucket_dt)),
+        ).fetchall()
+    }
+
+    cur = open_dt
+    count = 0
+    while cur <= max_bucket_dt:
+        b_ts = format_utc_iso(cur)
+        if b_ts not in existing_signals:
+            c = get_candle(conn, b_ts, symbol=symbol)
+            q_ok = c is not None
+            predictor.on_bucket_closed(b_ts, quality_ok=q_ok)
+            scorer.resolve_due(b_ts, session_start_ts=session_info["open_utc"])
+            count += 1
+        cur += timedelta(minutes=5)
+
+    if (
+        latest_dt >= close_dt - timedelta(minutes=5)
+        or (now_ny.date() == session_date and now_utc >= close_dt)
+        or (now_ny.date() > session_date)
+    ):
+        scorer.flush_session_end(session_info["open_utc"], session_info["close_utc"])
+
+    if count > 0:
+        log_health_event(
+            conn,
+            event_type="session_backfill_complete",
+            detail=f"Backfilled {count} signals for session {session_date.isoformat()}",
+        )
+    return count
 
 
 def fetch_bars_rest(

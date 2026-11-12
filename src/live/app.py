@@ -22,9 +22,11 @@ import yaml
 from src.live.collector import (
     CandleCollector,
     LiveStreamRunner,
+    backfill_current_session,
     is_nyse_market_open,
     nyse_fallback,
     utc_now_iso,
+    warm_start_from_parquet,
 )
 from src.live.db import (
     backup_db,
@@ -99,6 +101,7 @@ def create_app(
     lock_path: str | Path = "data/live/collector.lock",
     alpaca_api_key: str | None = None,
     alpaca_secret_key: str | None = None,
+    enable_warm_start: bool | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application instance."""
     cfg = load_live_config()
@@ -184,6 +187,27 @@ def create_app(
         )
         app.state.collector = collector
 
+        # Warm start if enabled and SQLite candles is sparse (< 30 days)
+        should_warm_start = enable_warm_start
+        if should_warm_start is None:
+            default_live_db = str(Path(cfg.get("db_path", "data/live/indicator.db")).resolve())
+            should_warm_start = str(db_p.resolve()) == default_live_db
+
+        if should_warm_start:
+            cnt_row = conn.execute("SELECT COUNT(*) FROM candles WHERE symbol = 'AAPL'").fetchone()
+            candle_count = cnt_row[0] if cnt_row else 0
+            if candle_count < 156:
+                warm_start_from_parquet(
+                    conn,
+                    parquet_path="data/clean/aapl_5m_clean.parquet",
+                    symbols=tuple(cfg.get("symbols", ["AAPL", "SPY", "QQQ"])),
+                    days=int(cfg.get("warm_start_days", 35)),
+                )
+
+            # Backfill current session signals if enabled
+            if cfg.get("backfill_session_on_start", True):
+                backfill_current_session(conn, predictor=predictor, scorer=scorer, symbol="AAPL")
+
         # Stream runner if enabled
         key = alpaca_api_key or os.getenv("ALPACA_API_KEY")
         secret = alpaca_secret_key or os.getenv("ALPACA_SECRET_KEY")
@@ -260,7 +284,7 @@ def create_app(
     @application.get("/api/candles")
     def get_candles(
         symbol: str = Query(default="AAPL"),
-        limit: int = Query(default=50, ge=1, le=1000),
+        limit: int = Query(default=156, ge=1, le=1000),
         start_ts: str | None = Query(default=None),
         end_ts: str | None = Query(default=None),
     ) -> list[dict[str, Any]]:
@@ -275,7 +299,7 @@ def create_app(
 
     @application.get("/api/signals")
     def get_signals(
-        limit: int = Query(default=50, ge=1, le=500),
+        limit: int = Query(default=156, ge=1, le=1000),
         offset: int = Query(default=0, ge=0),
         day: str | None = Query(default=None),
         direction: str | None = Query(default=None),
@@ -378,8 +402,8 @@ def create_app(
         conn: sqlite3.Connection = application.state.conn
         collector: CandleCollector = application.state.collector
         try:
-            recent_candles = load_candles(conn, symbol="AAPL", limit=30)
-            recent_sigs = query_signals_with_outcomes(conn, limit=10)
+            recent_candles = load_candles(conn, symbol="AAPL", limit=156)
+            recent_sigs = query_signals_with_outcomes(conn, limit=156)
             stats = compute_running_stats(conn, horizon_bars=application.state.scorer.horizon_bars)
             forming = None
             if recent_candles:

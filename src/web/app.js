@@ -1,6 +1,7 @@
 /**
  * AAPL Live Indicator Web Application
  * TradingView Lightweight Charts v4.2.0 Pinned API Contract
+ * Engineering Remediation: Dynamic Timezone, Always-On Scenarios/Drivers, 78-Cell Strip
  */
 
 (function () {
@@ -17,6 +18,7 @@
     markersMap: new Map(), // ts_iso -> marker
     latestCandle: null,
     latestSignal: null,
+    inspectedSignal: null, // set when user clicks past candle
     stats: null,
     ws: null,
     wsBackoff: 1000,
@@ -42,6 +44,11 @@
     colorToggle: document.getElementById("color-toggle"),
     themeToggle: document.getElementById("theme-toggle"),
 
+    // Historical Inspection Banner
+    historicalInspectBanner: document.getElementById("historical-inspect-banner"),
+    inspectTime: document.getElementById("inspect-time"),
+    btnReturnLive: document.getElementById("btn-return-live"),
+
     // Signal Card
     signalCandleTs: document.getElementById("signal-candle-ts"),
     signalIcon: document.getElementById("signal-icon"),
@@ -50,6 +57,7 @@
     signalHorizonText: document.getElementById("signal-horizon-text"),
     signalResolveClock: document.getElementById("signal-resolve-clock"),
     signalReasonText: document.getElementById("signal-reason-text"),
+    signalDiagnosticLean: document.getElementById("signal-diagnostic-lean"),
 
     // Scenarios
     scenBearPrice: document.getElementById("scen-bear-price"),
@@ -57,6 +65,7 @@
     scenBaseProb: document.getElementById("scen-base-prob"),
     scenBullPrice: document.getElementById("scen-bull-price"),
     narrativeText: document.getElementById("narrative-text"),
+    narrativePolicyNote: document.getElementById("narrative-policy-note"),
 
     // Why
     driversList: document.getElementById("drivers-list"),
@@ -96,20 +105,47 @@
     return Math.floor(new Date(isoStr).getTime() / 1000);
   }
 
+  // Timezone formatting per Task 3.1
+  function formatUnixTime(unixSeconds, tz, withDate = false) {
+    const d = new Date(unixSeconds * 1000);
+    const opts = withDate
+      ? { timeZone: tz, month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }
+      : { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false };
+    try {
+      return new Intl.DateTimeFormat("en-US", opts).format(d);
+    } catch (e) {
+      return d.toTimeString().substring(0, 5);
+    }
+  }
+
+  function applyChartTimezone(chart, tzChoice) {
+    if (!chart) return;
+    const tz = tzChoice === "local"
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : "America/New_York";
+    chart.applyOptions({
+      localization: {
+        timeFormatter: (time) => formatUnixTime(time, tz, true),
+      },
+      timeScale: {
+        tickMarkFormatter: (time) => formatUnixTime(time, tz, false),
+      },
+    });
+  }
+
   function formatTime(isoStr, tz = state.timezone) {
     if (!isoStr) return "--:--";
-    const date = new Date(isoStr);
+    const d = new Date(isoStr);
+    const targetTz = tz === "local" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "America/New_York";
     try {
-      if (tz === "local") {
-        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      }
-      return date.toLocaleTimeString([], {
-        timeZone: "America/New_York",
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: targetTz,
         hour: "2-digit",
         minute: "2-digit",
-      });
+        hour12: true,
+      }).format(d);
     } catch (e) {
-      return date.toTimeString().substring(0, 5);
+      return d.toTimeString().substring(0, 5);
     }
   }
 
@@ -119,6 +155,8 @@
       up: isGreenRed ? "#10b981" : "#3b82f6",
       down: isGreenRed ? "#ef4444" : "#f97316",
       none: "#64748b",
+      stripNone: "#334155",
+      stripEmpty: "#1e293b",
     };
   }
 
@@ -168,6 +206,22 @@
       wickDownColor: colors.down,
     });
 
+    // Apply Timezone formatting
+    applyChartTimezone(state.chart, state.timezone);
+
+    // Click inspection on chart
+    state.chart.subscribeClick((param) => {
+      if (param && param.time) {
+        // Find candle with matching epoch
+        for (const [ts, c] of state.candlesMap.entries()) {
+          if (parseIsoToEpochSeconds(ts) === param.time) {
+            inspectHistoricalSignal(ts);
+            break;
+          }
+        }
+      }
+    });
+
     window.addEventListener("resize", () => {
       if (state.chart) {
         state.chart.applyOptions({ width: el.chartContainer.clientWidth });
@@ -213,40 +267,118 @@
     state.candleSeries.setMarkers(deduplicated);
   }
 
-  // Update Signal History Strip
+  // Task 3.4: Populate Full 78-Cell Signal History Strip & Enable Click-to-Inspect
   function renderSignalStrip() {
     el.signalStrip.innerHTML = "";
-    const sortedCandles = Array.from(state.candlesMap.values()).sort(
-      (a, b) => new Date(a.ts_start) - new Date(b.ts_start)
-    );
+    const colors = getPaletteColors();
 
-    for (const c of sortedCandles) {
+    // Determine current/latest session date
+    let sessionDateStr = null;
+    if (state.latestCandle) {
+      const d = new Date(state.latestCandle.ts_start);
+      sessionDateStr = d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    } else {
+      sessionDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    }
+
+    // Generate 78 5-minute bucket timestamps (09:30 to 15:55 ET)
+    const sessionBuckets = [];
+    for (let barIdx = 0; barIdx < 78; barIdx++) {
+      const totalMinutes = 9 * 60 + 30 + barIdx * 5;
+      const h = Math.floor(totalMinutes / 60);
+      const m = totalMinutes % 60;
+      const hStr = h.toString().padStart(2, "0");
+      const mStr = m.toString().padStart(2, "0");
+
+      // Calculate approximate UTC ISO for session date + NY time
+      const utcMinutes = totalMinutes + 5 * 60;
+      const utcH = Math.floor(utcMinutes / 60);
+      const utcM = utcMinutes % 60;
+      const utcHStr = (utcH % 24).toString().padStart(2, "0");
+      const utcMStr = utcM.toString().padStart(2, "0");
+      const bucketIso = `${sessionDateStr}T${utcHStr}:${utcMStr}:00Z`;
+
+      sessionBuckets.push({
+        barIdx,
+        timeLabel: `${hStr}:${mStr} ET`,
+        bucketIso,
+      });
+    }
+
+    for (const b of sessionBuckets) {
       const cell = document.createElement("div");
       cell.className = "strip-cell";
-      const sig = state.signalsMap.get(c.ts_start);
-      if (sig && (sig.direction === "up" || sig.direction === "down")) {
-        cell.classList.add(sig.direction);
-        const opacity = Math.max(0.35, Math.min(1.0, sig.confidence || 0.6));
-        cell.style.opacity = opacity;
-        cell.title = `${c.ts_start}: ${sig.direction.toUpperCase()} (${Math.round(
-          (sig.confidence || 0) * 100
-        )}%)`;
+      cell.setAttribute("data-ts", b.bucketIso);
+
+      const sig = state.signalsMap.get(b.bucketIso);
+      const candle = state.candlesMap.get(b.bucketIso);
+
+      if (sig) {
+        const dir = (sig.direction || "none").toLowerCase();
+        if (dir === "up") {
+          cell.style.backgroundColor = colors.up;
+          cell.style.opacity = Math.max(0.45, Math.min(1.0, 0.45 + 0.55 * (sig.confidence || 0.5)));
+          cell.title = `${b.timeLabel} | UP ${Math.round((sig.confidence || 0.5) * 100)}%`;
+        } else if (dir === "down") {
+          cell.style.backgroundColor = colors.down;
+          cell.style.opacity = Math.max(0.45, Math.min(1.0, 0.45 + 0.55 * (sig.confidence || 0.5)));
+          cell.title = `${b.timeLabel} | DOWN ${Math.round((sig.confidence || 0.5) * 100)}%`;
+        } else {
+          cell.style.backgroundColor = colors.stripNone;
+          cell.style.opacity = "0.7";
+          const reasonLabel = sig.reason || "Abstain";
+          cell.title = `${b.timeLabel} | NO SIGNAL (${reasonLabel})`;
+        }
+      } else if (candle) {
+        // Candle closed but signal pending
+        cell.style.backgroundColor = colors.stripNone;
+        cell.style.opacity = "0.5";
+        cell.title = `${b.timeLabel} | Evaluated (Awaiting signal)`;
       } else {
-        cell.classList.add("none");
-        cell.title = `${c.ts_start}: No signal (${sig ? sig.reason || "none" : "unresolved"})`;
+        // Future bar not yet reached
+        cell.style.backgroundColor = colors.stripEmpty;
+        cell.style.opacity = "0.3";
+        cell.title = `${b.timeLabel} | Future bar`;
       }
+
       cell.addEventListener("click", () => {
-        if (sig) updateSignalCard(sig);
+        inspectHistoricalSignal(b.bucketIso);
       });
+
       el.signalStrip.appendChild(cell);
     }
   }
 
-  // Update Current Signal Card
+  // Inspect Historical Candle
+  function inspectHistoricalSignal(candleTs) {
+    let sig = state.signalsMap.get(candleTs);
+    if (!sig) {
+      // Fetch from REST if not in map
+      fetch(`/api/signal/${encodeURIComponent(candleTs)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((fetched) => {
+          if (fetched) {
+            state.signalsMap.set(candleTs, fetched);
+            applyInspectedSignal(fetched);
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+    applyInspectedSignal(sig);
+  }
+
+  function applyInspectedSignal(sig) {
+    state.inspectedSignal = sig;
+    el.historicalInspectBanner.classList.remove("hidden");
+    el.inspectTime.textContent = `${formatTime(sig.candle_ts)} ET`;
+    updateSignalCard(sig);
+  }
+
+  // Task 3.2: Update Current Signal Card (with NO SIGNAL enhancements)
   function updateSignalCard(sig) {
     if (!sig) return;
     const colors = getPaletteColors();
-    state.latestSignal = sig;
 
     const tsFormatted = formatTime(sig.candle_ts);
     el.signalCandleTs.textContent = `${tsFormatted} ${state.timezone === "local" ? "Local" : "ET"}`;
@@ -255,11 +387,13 @@
     const horizonMin = sig.horizon_minutes || state.horizonMinutes || 60;
     el.signalHorizonText.textContent = `Next ${horizonMin} min`;
 
-    // Compute resolve clock time
-    if (sig.candle_ts) {
-      const resolveDt = new Date(new Date(sig.candle_ts).getTime() + horizonMin * 60 * 1000);
-      el.signalResolveClock.textContent = `${formatTime(resolveDt.toISOString())} ET`;
-    }
+    const reasonMap = {
+      opening_settle: "Opening 15-min settle period",
+      horizon_past_close: "Horizon reaches past market close",
+      low_confidence: "Confidence below conviction threshold",
+      data_quality: "Data quality issue on candle",
+      missed: "Collector was offline for this candle",
+    };
 
     if (dir === "up") {
       el.signalIcon.textContent = "▲";
@@ -267,77 +401,134 @@
       el.signalDirection.textContent = "UP";
       el.signalDirection.style.color = colors.up;
       el.signalConfidence.textContent = `${Math.round((sig.confidence || 0.5) * 100)}%`;
-      el.signalReasonText.textContent = "Active bullish signal";
+      el.signalReasonText.textContent = "Active bullish trade signal";
+
+      // Resolves at
+      if (sig.candle_ts) {
+        const resolveDt = new Date(new Date(sig.candle_ts).getTime() + horizonMin * 60 * 1000);
+        el.signalResolveClock.textContent = `${formatTime(resolveDt.toISOString())} ET`;
+      }
+      el.signalDiagnosticLean.textContent = "Active Trade";
+      el.signalDiagnosticLean.style.color = colors.up;
     } else if (dir === "down") {
       el.signalIcon.textContent = "▼";
       el.signalIcon.style.color = colors.down;
       el.signalDirection.textContent = "DOWN";
       el.signalDirection.style.color = colors.down;
       el.signalConfidence.textContent = `${Math.round((sig.confidence || 0.5) * 100)}%`;
-      el.signalReasonText.textContent = "Active bearish signal";
+      el.signalReasonText.textContent = "Active bearish trade signal";
+
+      // Resolves at
+      if (sig.candle_ts) {
+        const resolveDt = new Date(new Date(sig.candle_ts).getTime() + horizonMin * 60 * 1000);
+        el.signalResolveClock.textContent = `${formatTime(resolveDt.toISOString())} ET`;
+      }
+      el.signalDiagnosticLean.textContent = "Active Trade";
+      el.signalDiagnosticLean.style.color = colors.down;
     } else {
+      // NO SIGNAL: Fix contradictory resolve time & show diagnostic lean
       el.signalIcon.textContent = "⚪";
       el.signalIcon.style.color = colors.none;
       el.signalDirection.textContent = "NO SIGNAL";
       el.signalDirection.style.color = colors.none;
       el.signalConfidence.textContent = "--%";
-      const reasonMap = {
-        opening_settle: "Opening settle (first 15 min)",
-        horizon_past_close: "Horizon reaches past market close",
-        low_confidence: "Confidence below conviction threshold",
-        data_quality: "Data quality issue on candle",
-        missed: "Collector was offline for this candle",
-      };
+      el.signalResolveClock.textContent = "— (No active trade)";
       el.signalReasonText.textContent = reasonMap[sig.reason] || (sig.reason ? `Abstain: ${sig.reason}` : "Awaiting conviction");
+
+      // Diagnostic Lean
+      const scen = sig.scenarios || {};
+      const diagConf = scen.diagnostic_confidence || (sig.meta_prob != null ? sig.meta_prob : null);
+      const lean = scen.lean || (sig.p_up != null ? (sig.p_up >= 0.5 ? "up" : "down") : null);
+
+      if (diagConf != null && lean != null) {
+        const confPct = Math.round(diagConf * 100);
+        const tauPct = state.modelInfo ? Math.round((state.modelInfo.tau_m || 0.5218) * 100) : 52;
+        el.signalDiagnosticLean.textContent = `${lean.toUpperCase()} (${confPct}% vs ${tauPct}% threshold)`;
+        el.signalDiagnosticLean.style.color = "var(--color-text-dim)";
+      } else {
+        el.signalDiagnosticLean.textContent = "Abstaining";
+        el.signalDiagnosticLean.style.color = "var(--color-text-dim)";
+      }
     }
 
-    // Scenarios Panel
+    // Scenarios Panel (Always rendered!)
     updateScenarios(sig);
 
-    // Why Panel
+    // Why Panel (Always rendered!)
     updateDrivers(sig);
   }
 
-  // Update Scenarios Tab
+  // Task 3.2 & 3.3: Update Scenarios Tab and Market Regime Footer
   function updateScenarios(sig) {
-    const scen = sig.scenarios;
-    const refPrice = state.latestCandle ? state.latestCandle.close : 0.0;
+    const scen = sig.scenarios || {};
+    const refCandle = state.candlesMap.get(sig.candle_ts) || state.latestCandle;
+    const refPrice = refCandle ? refCandle.close : 0.0;
     const hMin = sig.horizon_minutes || state.horizonMinutes || 60;
 
-    if (scen && refPrice > 0) {
-      const pBear = (refPrice * Math.exp(scen.bear_q10)).toFixed(2);
-      const pBase = (refPrice * Math.exp(scen.base_q50)).toFixed(2);
-      const pBull = (refPrice * Math.exp(scen.bull_q90)).toFixed(2);
+    // Always render quantile price targets if scenarios exist
+    if (scen.bear_q10 != null && scen.base_q50 != null && scen.bull_q90 != null) {
+      const pBear = scen.bear_q10.toFixed(2);
+      const pBase = scen.base_q50.toFixed(2);
+      const pBull = scen.bull_q90.toFixed(2);
 
-      el.scenBearPrice.textContent = `$${pBear}`;
-      el.scenBasePrice.textContent = `$${pBase}`;
-      el.scenBullPrice.textContent = `$${pBull}`;
+      let pctBear = "", pctBase = "", pctBull = "";
+      if (refPrice > 0) {
+        pctBear = ` (${(((scen.bear_q10 - refPrice) / refPrice) * 100).toFixed(2)}%)`;
+        pctBase = ` (${(((scen.base_q50 - refPrice) / refPrice) * 100).toFixed(2)}%)`;
+        pctBull = ` (${(((scen.bull_q90 - refPrice) / refPrice) * 100).toFixed(2)}%)`;
+      }
 
-      const dirStr = sig.direction === "up" ? "Up" : sig.direction === "down" ? "Down" : "Neutral";
-      const confStr = Math.round((sig.confidence || 0.5) * 100);
-      el.scenBaseProb.textContent = `${dirStr} (${confStr}%)`;
+      el.scenBearPrice.textContent = `$${pBear}${pctBear}`;
+      el.scenBasePrice.textContent = `$${pBase}${pctBase}`;
+      el.scenBullPrice.textContent = `$${pBull}${pctBull}`;
+
+      const leanStr = (scen.lean || (sig.p_up >= 0.5 ? "Up" : "Down") || "Neutral");
+      const confStr = scen.diagnostic_confidence
+        ? Math.round(scen.diagnostic_confidence * 100)
+        : Math.round((sig.confidence || 0.5) * 100);
+      el.scenBaseProb.textContent = `${leanStr} (${confStr}%)`;
 
       el.narrativeText.textContent =
-        `Model leans ${dirStr} ${confStr}% over the next ${hMin} min (median target $${pBase}). ` +
-        `Empirical quantiles bound the 10th-to-90th percentile move between $${pBear} and $${pBull}. ` +
-        `In similar historical market regimes, continuation occurred in ~52% of sessions.`;
+        `Model lean: ${leanStr} ${confStr}% over the next ${hMin} min (median target $${pBase}). ` +
+        `Quantile regressors bound the 10th-to-90th percentile move between $${pBear} and $${pBull}. ` +
+        `In similar past volatility regimes, continuation occurred in ~52% of sessions.`;
     } else {
       el.scenBearPrice.textContent = "---.--";
       el.scenBasePrice.textContent = "---.--";
       el.scenBullPrice.textContent = "---.--";
       el.scenBaseProb.textContent = "Median target";
-      el.narrativeText.textContent =
-        `Awaiting next active signal to compute ${hMin}-minute quantile forecasts.`;
+      el.narrativeText.textContent = `Awaiting next bucket to compute ${hMin}-minute quantile forecasts.`;
+    }
+
+    // Task 3.2: Append policy note if horizon_past_close
+    if (sig.reason === "horizon_past_close") {
+      el.narrativePolicyNote.classList.remove("hidden");
+    } else {
+      el.narrativePolicyNote.classList.add("hidden");
+    }
+
+    // Task 3.3: Dynamically update bottom-left regime footer
+    if (scen.regime) {
+      const volMap = { low: "Low Volatility", mid: "Normal Volatility", high: "High Volatility" };
+      const timeMap = {
+        open: "Opening Session",
+        mid: "Midday Session",
+        afternoon: "Afternoon Session",
+        close: "Closing Hour",
+      };
+      const vText = volMap[scen.regime.vol_bin] || "Normal Volatility";
+      const tText = timeMap[scen.regime.time_bin] || "Midday Session";
+      el.regimeText.textContent = `Market Regime: ${vText} | ${tText}`;
     }
   }
 
-  // Update Why (Drivers) Tab
+  // Task 3.2: Update Why (Drivers) Tab - Always rendered!
   function updateDrivers(sig) {
     const drivers = sig.drivers || [];
     el.driversList.innerHTML = "";
 
     if (drivers.length === 0) {
-      el.driversList.innerHTML = `<div class="driver-empty">No active signal feature contributions for this candle.</div>`;
+      el.driversList.innerHTML = `<div class="driver-empty">No feature contributions recorded for this candle.</div>`;
       return;
     }
 
@@ -350,16 +541,22 @@
       rsi_14: "Wilder RSI (14)",
       vol_12: "Short-term volatility (12 bars)",
       vol_78: "Daily volatility (78 bars)",
+      range_1: "Bar range (high - low)",
       range_12: "Normalized 12-bar range",
       rel_volume_log: "Relative volume (vs 20d median)",
       rel_tc_log: "Relative trade count (vs 20d median)",
       vwap_dist: "Distance to candle VWAP",
       sess_vwap_dist: "Distance to session VWAP",
       tod: "Time of day progress",
+      tod_sin: "Time of day (sine cycle)",
+      tod_cos: "Time of day (cosine cycle)",
       gap: "Overnight gap return",
+      day_ret: "Cumulative day return",
       prev_day_ret: "Prior day return",
       prev_day_range: "Prior day range",
       bars_left: "Bars remaining in session",
+      is_half: "Half-day session indicator",
+      dow: "Day of week",
     };
 
     for (const d of drivers) {
@@ -575,7 +772,8 @@
           for (const s of d.recent_signals) {
             state.signalsMap.set(s.candle_ts, s);
           }
-          if (d.recent_signals.length > 0) {
+          if (d.recent_signals.length > 0 && !state.inspectedSignal) {
+            state.latestSignal = d.recent_signals[0];
             updateSignalCard(d.recent_signals[0]);
           }
         }
@@ -624,7 +822,10 @@
       case "signal": {
         const s = msg.data;
         state.signalsMap.set(s.candle_ts, s);
-        updateSignalCard(s);
+        state.latestSignal = s;
+        if (!state.inspectedSignal) {
+          updateSignalCard(s);
+        }
         renderMarkers();
         renderSignalStrip();
         renderLogTable();
@@ -692,7 +893,11 @@
   function initControls() {
     el.tzSelect.addEventListener("change", (e) => {
       state.timezone = e.target.value;
-      if (state.latestSignal) updateSignalCard(state.latestSignal);
+      // Task 3.1: Apply dynamic timezone formatting directly to chart
+      applyChartTimezone(state.chart, state.timezone);
+      const activeSig = state.inspectedSignal || state.latestSignal;
+      if (activeSig) updateSignalCard(activeSig);
+      if (state.latestCandle) updateHeaderTicker(state.latestCandle);
       renderLogTable();
     });
 
@@ -702,7 +907,8 @@
       el.colorToggle.textContent = isGreenRed ? "Green/Red" : "Blue/Orange";
       renderMarkers();
       renderSignalStrip();
-      if (state.latestSignal) updateSignalCard(state.latestSignal);
+      const activeSig = state.inspectedSignal || state.latestSignal;
+      if (activeSig) updateSignalCard(activeSig);
     });
 
     el.themeToggle.addEventListener("click", () => {
@@ -726,6 +932,14 @@
     el.logFilterSignals.addEventListener("change", (e) => {
       state.showSignalsOnly = e.target.checked;
       renderLogTable();
+    });
+
+    el.btnReturnLive.addEventListener("click", () => {
+      state.inspectedSignal = null;
+      el.historicalInspectBanner.classList.add("hidden");
+      if (state.latestSignal) {
+        updateSignalCard(state.latestSignal);
+      }
     });
   }
 
@@ -753,4 +967,3 @@
     start();
   }
 })();
-

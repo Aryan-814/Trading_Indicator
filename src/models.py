@@ -112,13 +112,6 @@ def make_signal(b, hist):
         row[used_feat].to_numpy(dtype="float64").tobytes()
     ).hexdigest()
 
-    if last["bars_left"] < h:
-        out["reason"] = "horizon_past_close"
-        return out
-    if last["bar_idx"] < thr["skip_first_bars"]:
-        out["reason"] = "opening_settle"
-        return out
-
     p_up = float(b["primary"].predict(row[used_feat])[0])
     side = 1 if p_up >= 0.5 else -1
 
@@ -142,14 +135,30 @@ def make_signal(b, hist):
     out["p_up"] = p_up
     out["meta_prob"] = m
 
-    # Quantile price targets — Bear / Base / Bull
+    # Quantile price targets — Bear / Base / Bull + Regime & Diagnostics
     raw_qs = [float(b["q"][a].predict(row[used_feat])[0]) for a in (10, 50, 90)]
     qs = np.sort(raw_qs)
     close = float(last["close"])
+
+    v78 = float(row["vol_78"].values[0]) if "vol_78" in row and not pd.isna(row["vol_78"].values[0]) else 0.004
+    vol_bin = "low" if v78 < 0.003 else ("high" if v78 > 0.006 else "mid")
+    b_idx = int(last["bar_idx"])
+    if b_idx < 12:
+        time_bin = "open"
+    elif b_idx < 42:
+        time_bin = "mid"
+    elif b_idx < 66:
+        time_bin = "afternoon"
+    else:
+        time_bin = "close"
+
     out["scenarios"] = {
         "bear_q10": close * float(np.exp(qs[0])),
         "base_q50": close * float(np.exp(qs[1])),
         "bull_q90": close * float(np.exp(qs[2])),
+        "regime": {"vol_bin": vol_bin, "time_bin": time_bin},
+        "diagnostic_confidence": conf,
+        "lean": "up" if p_up >= 0.5 else "down",
     }
 
     # Spec 10.4: top-5 feature drivers by SHAP contribution
@@ -173,11 +182,22 @@ def make_signal(b, hist):
         warnings.warn(f"pred_contrib failed: {exc}")
         out["drivers"] = []
 
-    # Gate: signal only when raw meta prob >= tau_m
-    if m >= thr["tau_m"]:
+    # Policy Gates: suppress trade signal when conditions are met
+    if last["bars_left"] < h:
+        out["direction"] = "none"
+        out["confidence"] = None
+        out["reason"] = "horizon_past_close"
+    elif last["bar_idx"] < thr["skip_first_bars"]:
+        out["direction"] = "none"
+        out["confidence"] = None
+        out["reason"] = "opening_settle"
+    elif m >= thr["tau_m"]:
         out["direction"] = "up" if side == 1 else "down"
         out["confidence"] = conf
+        out["reason"] = None
     else:
+        out["direction"] = "none"
+        out["confidence"] = None
         out["reason"] = "low_confidence"
 
     return out
