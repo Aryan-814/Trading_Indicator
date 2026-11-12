@@ -528,10 +528,14 @@
     }
 
     // Task 3.2: Append policy note if horizon_past_close
-    if (sig.reason === "horizon_past_close") {
-      el.narrativePolicyNote.classList.remove("hidden");
-    } else {
-      el.narrativePolicyNote.classList.add("hidden");
+    if (el.narrativePolicyNote) {
+      if (sig.reason === "horizon_past_close") {
+        el.narrativePolicyNote.classList.remove("hidden");
+        el.narrativePolicyNote.style.display = "block";
+      } else {
+        el.narrativePolicyNote.classList.add("hidden");
+        el.narrativePolicyNote.style.display = "none";
+      }
     }
 
     // Task 3.3: Dynamically update bottom-left regime footer

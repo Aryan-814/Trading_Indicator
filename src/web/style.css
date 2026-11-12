@@ -167,6 +167,14 @@ body {
 }
 
 /* Health Banner */
+.hidden {
+  display: none !important;
+}
+
+#narrative-policy-note.hidden {
+  display: none !important;
+}
+
 .health-banner {
   background-color: #ef4444;
   color: #ffffff;
@@ -177,7 +185,7 @@ body {
 }
 
 .health-banner.hidden {
-  display: none;
+  display: none !important;
 }
 
 /* Main Layout */

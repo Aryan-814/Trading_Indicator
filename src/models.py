@@ -243,9 +243,48 @@ def make_signal(b, hist):
         out["confidence"] = None
         out["reason"] = "opening_settle"
     elif m >= thr["tau_m"]:
-        out["direction"] = "up" if side == 1 else "down"
-        out["confidence"] = conf
-        out["reason"] = None
+        # Intraday trend consistency check:
+        # If static macro feature (prev_day_ret) elevates p_up while intraday momentum conflicts
+        # (day_ret < 0 and ret_6 < 0 for UP, or day_ret > 0 and ret_6 > 0 for DOWN),
+        # suppress directional signal to preserve target coverage (~20%).
+        day_ret_val = (
+            float(row["day_ret"].values[0])
+            if "day_ret" in row and not pd.isna(row["day_ret"].values[0])
+            else 0.0
+        )
+        ret_6_val = (
+            float(row["ret_6"].values[0])
+            if "ret_6" in row and not pd.isna(row["ret_6"].values[0])
+            else 0.0
+        )
+        pdr_val = (
+            float(row["prev_day_ret"].values[0])
+            if "prev_day_ret" in row and not pd.isna(row["prev_day_ret"].values[0])
+            else None
+        )
+
+        suppress_conflicting_trend = False
+        if side == 1:
+            if pdr_val is not None and pdr_val > 0.0 and day_ret_val < 0.0 and ret_6_val < 0.0:
+                if "prev_day_ret" in used_feat:
+                    pdr_idx = used_feat.index("prev_day_ret")
+                    if pdr_idx < len(feat_contribs) and feat_contribs[pdr_idx] > 0.0:
+                        suppress_conflicting_trend = True
+        elif side == -1:
+            if pdr_val is not None and pdr_val < 0.0 and day_ret_val > 0.0 and ret_6_val > 0.0:
+                if "prev_day_ret" in used_feat:
+                    pdr_idx = used_feat.index("prev_day_ret")
+                    if pdr_idx < len(feat_contribs) and feat_contribs[pdr_idx] < 0.0:
+                        suppress_conflicting_trend = True
+
+        if suppress_conflicting_trend:
+            out["direction"] = "none"
+            out["confidence"] = None
+            out["reason"] = "low_confidence"
+        else:
+            out["direction"] = "up" if side == 1 else "down"
+            out["confidence"] = conf
+            out["reason"] = None
     else:
         out["direction"] = "none"
         out["confidence"] = None

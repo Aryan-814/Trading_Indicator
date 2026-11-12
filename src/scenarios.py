@@ -158,3 +158,4 @@ def lookup_analog_narrative(
         )
 
     return narrative
+

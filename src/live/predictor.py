@@ -45,10 +45,24 @@ def prepare_history_frame(candles: list[dict[str, Any]]) -> pd.DataFrame:
     df["ts"] = df["timestamp"].dt.tz_convert(tz_ny)
     df["day"] = df["ts"].dt.date.astype(str)
 
-    # Map each day to its official NYSE session length (78 full, 42 half).
+    # Filter strictly to regular NYSE trading hours (09:30 to 15:55 ET, or 12:55 on half-days)
     day_meta: dict[str, dict[str, Any]] = {}
     for day_str in df["day"].unique():
         day_meta[day_str] = get_nyse_session_info(day_str)
+
+    valid_mask = []
+    for row_ts, d_str in zip(df["ts"], df["day"]):
+        info = day_meta[d_str]
+        if info.get("closed"):
+            valid_mask.append(False)
+            continue
+        close_hour = 13 if info.get("is_half") else 16
+        bar_hm = (row_ts.hour, row_ts.minute)
+        valid_mask.append((9, 30) <= bar_hm < (close_hour, 0))
+
+    df = df[valid_mask].reset_index(drop=True)
+    if df.empty:
+        return pd.DataFrame()
 
     df["day_bars"] = [int(day_meta[d].get("day_bars") or 78) for d in df["day"]]
     df["is_half"] = [int(day_meta[d].get("is_half") or 0) for d in df["day"]]

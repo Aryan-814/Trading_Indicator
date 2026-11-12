@@ -104,6 +104,22 @@ def is_nyse_market_open(now_utc: datetime | None = None) -> bool:
     return session["open_dt"] <= now < session["close_dt"]
 
 
+def is_regular_session_bar(value: str | datetime) -> bool:
+    """Check whether a bar start timestamp falls strictly within regular NYSE trading hours.
+
+    Uses ZoneInfo('America/New_York') to handle US DST shifts dynamically.
+    Rejects weekends, holidays, pre-market (< 09:30 ET), and post-market (>= 16:00 ET,
+    or >= 13:00 ET on NYSE half-days).
+    The last 5-minute bucket of a regular day starts at 15:55 ET (ends 16:00 ET).
+    """
+    dt_utc = parse_utc_dt(value)
+    dt_ny = dt_utc.astimezone(tz_ny)
+    session = get_nyse_session_info(dt_ny.date())
+    if session.get("closed"):
+        return False
+    return session["open_dt"] <= dt_utc < session["close_dt"]
+
+
 def aggregate_minute_bars(
     bucket_ts: str,
     symbol: str,
@@ -183,8 +199,15 @@ class CandleCollector:
         if symbol not in self.symbols:
             return None
 
+        # Filter out pre-market and after-hours minute bars
+        if not is_regular_session_bar(raw_bar["timestamp"]):
+            return None
+
         bar_ts = format_utc_iso(parse_utc_dt(raw_bar["timestamp"]))
         bucket_ts = floor_to_5_minutes(bar_ts)
+
+        if not is_regular_session_bar(bucket_ts):
+            return None
 
         if bucket_ts in self.finalised_buckets.get(symbol, set()):
             log_health_event(
@@ -229,6 +252,9 @@ class CandleCollector:
         source: str = "live",
     ) -> dict[str, dict[str, Any] | None]:
         """Finalise candles in deterministic order: SPY -> QQQ -> AAPL -> callbacks."""
+        if not is_regular_session_bar(bucket_ts):
+            return {}
+
         results: dict[str, dict[str, Any] | None] = {}
         for sym in self.symbols:
             key = (sym, bucket_ts)
@@ -331,6 +357,8 @@ def warm_start_alpaca_rest(
     for sym in symbols:
         bars = data_map.get(sym, [])
         for bar in bars:
+            if not is_regular_session_bar(bar.timestamp):
+                continue
             ts_iso = format_utc_iso(parse_utc_dt(bar.timestamp))
             candle = {
                 "ts_start": ts_iso,
@@ -437,6 +465,8 @@ def warm_start_from_parquet(
                 ts_iso = format_utc_iso(parse_utc_dt(ts_val.to_pydatetime()))
             else:
                 ts_iso = format_utc_iso(parse_utc_dt(str(ts_val)))
+            if not is_regular_session_bar(ts_iso):
+                continue
             candle = {
                 "ts_start": ts_iso,
                 "symbol": sym,
@@ -578,6 +608,8 @@ def fetch_bars_rest(
     data_map = barset.data if hasattr(barset, "data") else {}
     for sym, bars in data_map.items():
         for bar in bars:
+            if not is_regular_session_bar(bar.timestamp):
+                continue
             rows.append(
                 {
                     "symbol": str(sym),
