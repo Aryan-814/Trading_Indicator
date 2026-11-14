@@ -494,71 +494,90 @@ def backfill_current_session(
     scorer: Any,
     symbol: str = "AAPL",
     now_dt: datetime | None = None,
+    num_sessions: int = 5,
 ) -> int:
-    """Identify closed buckets from current/latest session and generate signals & outcomes."""
+    """Identify closed buckets from recent sessions (default 5 trading sessions) and generate signals & outcomes."""
     from datetime import timedelta
 
-    latest_row = conn.execute(
-        "SELECT ts_start FROM candles WHERE symbol = ? ORDER BY ts_start DESC LIMIT 1",
-        (symbol,),
-    ).fetchone()
-    if not latest_row:
+    days_rows = conn.execute(
+        """
+        SELECT DISTINCT substr(ts_start, 1, 10) as day
+        FROM candles
+        WHERE symbol = ?
+        ORDER BY day DESC
+        LIMIT ?
+        """,
+        (symbol, num_sessions),
+    ).fetchall()
+    if not days_rows:
         return 0
 
-    latest_ts = str(latest_row["ts_start"])
-    latest_dt = parse_utc_dt(latest_ts)
-    latest_ny = latest_dt.astimezone(tz_ny)
-    session_date = latest_ny.date()
-    session_info = get_nyse_session_info(session_date)
-    if session_info.get("closed"):
-        return 0
-
-    open_dt = parse_utc_dt(session_info["open_utc"])
-    close_dt = parse_utc_dt(session_info["close_utc"])
-
+    session_dates = [r[0] for r in days_rows][::-1]  # chronological: oldest to newest
     now_utc = now_dt or datetime.now(tz_utc)
     now_ny = now_utc.astimezone(tz_ny)
+    total_count = 0
 
-    if now_ny.date() == session_date:
-        curr_floored = parse_utc_dt(floor_to_5_minutes(now_utc))
-        max_bucket_dt = min(latest_dt, close_dt - timedelta(minutes=5), curr_floored - timedelta(minutes=5))
-    else:
-        max_bucket_dt = min(latest_dt, close_dt - timedelta(minutes=5))
+    for day_str in session_dates:
+        session_info = get_nyse_session_info(day_str)
+        if session_info.get("closed"):
+            continue
 
-    existing_signals = {
-        str(r["candle_ts"])
-        for r in conn.execute(
-            "SELECT candle_ts FROM signals WHERE candle_ts >= ? AND candle_ts <= ?",
-            (session_info["open_utc"], format_utc_iso(max_bucket_dt)),
-        ).fetchall()
-    }
+        open_dt = parse_utc_dt(session_info["open_utc"])
+        close_dt = parse_utc_dt(session_info["close_utc"])
 
-    cur = open_dt
-    count = 0
-    while cur <= max_bucket_dt:
-        b_ts = format_utc_iso(cur)
-        if b_ts not in existing_signals:
-            c = get_candle(conn, b_ts, symbol=symbol)
-            q_ok = c is not None
-            predictor.on_bucket_closed(b_ts, quality_ok=q_ok)
-            scorer.resolve_due(b_ts, session_start_ts=session_info["open_utc"])
-            count += 1
-        cur += timedelta(minutes=5)
+        day_latest_row = conn.execute(
+            "SELECT ts_start FROM candles WHERE symbol = ? AND ts_start >= ? AND ts_start < ? ORDER BY ts_start DESC LIMIT 1",
+            (symbol, session_info["open_utc"], session_info["close_utc"]),
+        ).fetchone()
+        if not day_latest_row:
+            continue
 
-    if (
-        latest_dt >= close_dt - timedelta(minutes=5)
-        or (now_ny.date() == session_date and now_utc >= close_dt)
-        or (now_ny.date() > session_date)
-    ):
-        scorer.flush_session_end(session_info["open_utc"], session_info["close_utc"])
+        latest_dt = parse_utc_dt(str(day_latest_row["ts_start"]))
+        latest_ny = latest_dt.astimezone(tz_ny)
+        session_date = latest_ny.date()
 
-    if count > 0:
+        if now_ny.date() == session_date:
+            curr_floored = parse_utc_dt(floor_to_5_minutes(now_utc))
+            max_bucket_dt = min(latest_dt, close_dt - timedelta(minutes=5), curr_floored - timedelta(minutes=5))
+        else:
+            max_bucket_dt = min(latest_dt, close_dt - timedelta(minutes=5))
+
+        existing_signals = {
+            str(r["candle_ts"])
+            for r in conn.execute(
+                "SELECT candle_ts FROM signals WHERE candle_ts >= ? AND candle_ts <= ?",
+                (session_info["open_utc"], format_utc_iso(max_bucket_dt)),
+            ).fetchall()
+        }
+
+        cur = open_dt
+        day_count = 0
+        while cur <= max_bucket_dt:
+            b_ts = format_utc_iso(cur)
+            if b_ts not in existing_signals:
+                c = get_candle(conn, b_ts, symbol=symbol)
+                q_ok = c is not None
+                predictor.on_bucket_closed(b_ts, quality_ok=q_ok)
+                scorer.resolve_due(b_ts, session_start_ts=session_info["open_utc"])
+                day_count += 1
+            cur += timedelta(minutes=5)
+
+        if (
+            latest_dt >= close_dt - timedelta(minutes=5)
+            or (now_ny.date() == session_date and now_utc >= close_dt)
+            or (now_ny.date() > session_date)
+        ):
+            scorer.flush_session_end(session_info["open_utc"], session_info["close_utc"])
+
+        total_count += day_count
+
+    if total_count > 0:
         log_health_event(
             conn,
             event_type="session_backfill_complete",
-            detail=f"Backfilled {count} signals for session {session_date.isoformat()}",
+            detail=f"Backfilled {total_count} signals across {len(session_dates)} sessions ({session_dates[0]}..{session_dates[-1]})",
         )
-    return count
+    return total_count
 
 
 def fetch_bars_rest(

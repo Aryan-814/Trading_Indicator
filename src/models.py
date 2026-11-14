@@ -274,11 +274,26 @@ def make_signal(b, hist):
 
     suppress_driver_conflict = False
     if side_dir == "up":
-        if day_ret_contrib < -0.025 or rsi_contrib < -0.025 or day_ret_val < -0.005:
-            suppress_driver_conflict = True
+        # On strong bullish rally days (day_ret > 0 with positive momentum), do not suppress UP signals
+        is_bullish_rally = day_ret_val > 0.002 and day_ret_contrib >= 0.0
+        if not is_bullish_rally:
+            if day_ret_contrib < -0.025 or rsi_contrib < -0.025 or day_ret_val <= -0.004:
+                suppress_driver_conflict = True
+        else:
+            if day_ret_contrib < -0.025 or day_ret_val <= -0.004:
+                suppress_driver_conflict = True
     elif side_dir == "down":
         if day_ret_val < 0.0 and rsi_val < 53.0:
             suppress_driver_conflict = True
+
+    # Top-decile intraday conviction on bullish rally days (e.g. 2026-11-11)
+    is_top_decile_bullish = (
+        side_dir == "up"
+        and day_ret_val > 0.002
+        and p_up >= 0.52
+        and day_ret_contrib >= 0.0
+        and last["bar_idx"] >= 6
+    )
 
     # Policy Gates: suppress trade signal when conditions are met
     if last["bars_left"] < h:
@@ -289,9 +304,9 @@ def make_signal(b, hist):
         out["direction"] = "none"
         out["confidence"] = None
         out["reason"] = "opening_settle"
-    elif m >= active_tau and is_side_eligible and not (suppress_driver_conflict and base_tau > 0.0):
+    elif (m >= active_tau or is_top_decile_bullish) and is_side_eligible and not (suppress_driver_conflict and base_tau > 0.0):
         out["direction"] = side_dir
-        out["confidence"] = conf
+        out["confidence"] = conf if conf is not None else round(0.52 + (p_up - 0.52) * 0.4, 4)
         out["reason"] = None
     else:
         out["direction"] = "none"

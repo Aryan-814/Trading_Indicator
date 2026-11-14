@@ -212,7 +212,7 @@ def create_app(
 
             # Backfill current session signals if enabled
             if cfg.get("backfill_session_on_start", True):
-                backfill_current_session(conn, predictor=predictor, scorer=scorer, symbol="AAPL")
+                backfill_current_session(conn, predictor=predictor, scorer=scorer, symbol="AAPL", num_sessions=int(cfg.get("backfill_sessions", 5)))
         if enable_stream and key and secret:
             async def run_backup() -> None:
                 await run_backup_async(db_p, backup_d)
@@ -286,7 +286,7 @@ def create_app(
     @application.get("/api/candles")
     def get_candles(
         symbol: str = Query(default="AAPL"),
-        limit: int = Query(default=156, ge=1, le=1000),
+        limit: int = Query(default=390, ge=1, le=1000),
         start_ts: str | None = Query(default=None),
         end_ts: str | None = Query(default=None),
     ) -> list[dict[str, Any]]:
@@ -301,7 +301,7 @@ def create_app(
 
     @application.get("/api/signals")
     def get_signals(
-        limit: int = Query(default=156, ge=1, le=1000),
+        limit: int = Query(default=390, ge=1, le=1000),
         offset: int = Query(default=0, ge=0),
         day: str | None = Query(default=None),
         direction: str | None = Query(default=None),
@@ -408,8 +408,8 @@ def create_app(
         conn: sqlite3.Connection = application.state.conn
         collector: CandleCollector = application.state.collector
         try:
-            recent_candles = load_candles(conn, symbol="AAPL", limit=156)
-            recent_sigs = query_signals_with_outcomes(conn, limit=156)
+            recent_candles = load_candles(conn, symbol="AAPL", limit=390)
+            recent_sigs = query_signals_with_outcomes(conn, limit=390)
             stats = compute_running_stats(conn, horizon_bars=application.state.scorer.horizon_bars)
             forming = None
             if recent_candles:

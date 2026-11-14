@@ -65,27 +65,9 @@ def seed_database(
     scorer = LiveScorer(conn=conn, horizon_bars=int(bundle["thr"]["horizon_bars"]), cost_bps_per_side=1.0)
     predictor = LivePredictor(conn=conn, bundle=bundle, symbol="AAPL")
 
-    print("Backfilling recent sessions (2026-11-12 and 2026-11-13)...")
-    from datetime import timedelta
-    from src.live.collector import get_nyse_session_info, parse_utc_dt, format_utc_iso
-
-    for day_str in ["2026-11-12", "2026-11-13"]:
-        session_info = get_nyse_session_info(day_str)
-        if session_info.get("closed"):
-            continue
-        open_dt = parse_utc_dt(session_info["open_utc"])
-        close_dt = parse_utc_dt(session_info["close_utc"])
-        max_bucket_dt = close_dt - timedelta(minutes=5)
-        cur = open_dt
-        added = 0
-        while cur <= max_bucket_dt:
-            b_ts = format_utc_iso(cur)
-            predictor.on_bucket_closed(b_ts, quality_ok=True)
-            scorer.resolve_due(b_ts, session_start_ts=session_info["open_utc"])
-            added += 1
-            cur += timedelta(minutes=5)
-        scorer.flush_session_end(session_info["open_utc"], session_info["close_utc"])
-        print(f"Generated {added} signals for {day_str}.")
+    print("Backfilling last 5 trading sessions (2026-11-09 to 2026-11-13)...")
+    n_backfilled = backfill_current_session(conn, predictor=predictor, scorer=scorer, symbol="AAPL", num_sessions=5)
+    print(f"Backfilled {n_backfilled} total signals across last 5 trading sessions.")
 
     stats = compute_running_stats(conn, horizon_bars=int(bundle["thr"]["horizon_bars"]))
     checkpoint_and_close(conn)
