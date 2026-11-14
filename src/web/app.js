@@ -12,7 +12,7 @@
     modelInfo: null,
     horizonBars: 12,
     horizonMinutes: 60,
-    timezone: "America/New_York",
+    timezone: "ET",
     candlesMap: new Map(), // ts_iso -> candle
     signalsMap: new Map(), // ts_iso -> signal
     markersMap: new Map(), // ts_iso -> marker
@@ -287,8 +287,8 @@
       const checkmarkOnly = sig.correct === 1 ? "✓" : (sig.correct === 0 ? "✗" : "");
       const fullText = `${isUp ? "UP" : "DN"} ${confPct}%${markSuffix}`;
 
-      // Set full text if at least 3 bars (900 seconds) away from previous labeled signal in same direction
-      const isSeparated = (epochSec - lastLabeledTime[dir]) >= 900;
+      // Set full text if at least 6 bars (1800 seconds / 30 mins) away from previous labeled signal in same direction
+      const isSeparated = (epochSec - lastLabeledTime[dir]) >= 1800;
       const markerText = isSeparated ? fullText : checkmarkOnly;
 
       if (isSeparated) {
@@ -958,17 +958,21 @@
     });
   }
 
+  // Timezone handler
+  function updateChartTimezone() {
+    if (el.tzSelect) {
+      state.timezone = el.tzSelect.value;
+    }
+    applyChartTimezone(state.chart, state.timezone);
+    const activeSig = state.inspectedSignal || state.latestSignal;
+    if (activeSig) updateSignalCard(activeSig);
+    if (state.latestCandle) updateHeaderTicker(state.latestCandle);
+    renderLogTable();
+  }
+
   // Controls Initialization
   function initControls() {
-    el.tzSelect.addEventListener("change", (e) => {
-      state.timezone = e.target.value;
-      // Task 3.1: Apply dynamic timezone formatting directly to chart
-      applyChartTimezone(state.chart, state.timezone);
-      const activeSig = state.inspectedSignal || state.latestSignal;
-      if (activeSig) updateSignalCard(activeSig);
-      if (state.latestCandle) updateHeaderTicker(state.latestCandle);
-      renderLogTable();
-    });
+    el.tzSelect.addEventListener("change", updateChartTimezone);
 
     el.colorToggle.addEventListener("click", () => {
       document.body.classList.toggle("green-red-theme");
@@ -1017,6 +1021,7 @@
     initChart();
     initTabs();
     initControls();
+    updateChartTimezone();
     await fetchModelInfo();
     connectWebSocket();
 

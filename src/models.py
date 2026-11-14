@@ -232,9 +232,11 @@ def make_signal(b, hist):
     }
 
     # Spec 10.4: top-5 feature drivers by SHAP contribution
+    feat_contrib_map = {}
     try:
         contribs = b["primary"].predict(row[used_feat], pred_contrib=True)[0]
         feat_contribs = contribs[:-1]  # last element is bias
+        feat_contrib_map = dict(zip(used_feat, feat_contribs))
         top_idx = np.argsort(np.abs(feat_contribs))[-5:][::-1]
         out["drivers"] = [
             {
@@ -255,6 +257,29 @@ def make_signal(b, hist):
     # Down side also requires p_up <= 0.495 so flat 0.499 bars do not trigger a short
     is_side_eligible = (side_dir == "up") or (side_dir == "down" and p_up <= 0.495)
 
+    # Intraday SHAP Driver Agreement Gate:
+    # Prevents static prior-day features from forcing counter-trend signals against intraday momentum
+    day_ret_val = (
+        float(row["day_ret"].values[0])
+        if "day_ret" in row and not pd.isna(row["day_ret"].values[0])
+        else 0.0
+    )
+    rsi_val = (
+        float(row["rsi_14"].values[0])
+        if "rsi_14" in row and not pd.isna(row["rsi_14"].values[0])
+        else 50.0
+    )
+    day_ret_contrib = feat_contrib_map.get("day_ret", 0.0)
+    rsi_contrib = feat_contrib_map.get("rsi_14", 0.0)
+
+    suppress_driver_conflict = False
+    if side_dir == "up":
+        if day_ret_contrib < -0.025 or rsi_contrib < -0.025 or day_ret_val < -0.005:
+            suppress_driver_conflict = True
+    elif side_dir == "down":
+        if day_ret_val < 0.0 and rsi_val < 53.0:
+            suppress_driver_conflict = True
+
     # Policy Gates: suppress trade signal when conditions are met
     if last["bars_left"] < h:
         out["direction"] = "none"
@@ -264,7 +289,7 @@ def make_signal(b, hist):
         out["direction"] = "none"
         out["confidence"] = None
         out["reason"] = "opening_settle"
-    elif m >= active_tau and is_side_eligible:
+    elif m >= active_tau and is_side_eligible and not (suppress_driver_conflict and base_tau > 0.0):
         out["direction"] = side_dir
         out["confidence"] = conf
         out["reason"] = None
