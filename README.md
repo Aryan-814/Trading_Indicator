@@ -157,13 +157,13 @@ where $\sigma_t$ is the causal EWM std of `ret_1` (`span=78`, `min_periods=30`).
 
 **Dead-zone primary label**:
 
-$$y_t = \begin{cases} +1 & \text{if } \text{fwd}_t > k_{dz} \cdot s_t \\ -1 & \text{if } \text{fwd}_t < -k_{dz} \cdot s_t \\ 0  & \text{otherwise (dead zone)} \\ \text{NaN} & \text{if } \text{bars\_left}_t < h \text{ or warm-up} \end{cases}$$
+$$y_t = \begin{cases} +1 & \text{if } \text{fwd}_t > k_{dz} \cdot s_t \\ -1 & \text{if } \text{fwd}_t < -k_{dz} \cdot s_t \\ 0  & \text{otherwise (dead zone)} \\ \text{NaN} & \text{if } \text{bars left}_t < h \text{ or warm-up} \end{cases}$$
 
 At the production setting ($h = 12$, $k_{dz} = 0.30$), 32.6% of valid rows fall in the dead zone and 51.8% of non-dead-zone rows are UP. Only $y \in \{-1, +1\}$ rows enter primary classifier training.
 
 **Scoring label**:
 
-$$y^{\text{sign}}_t = \text{sign}(\text{fwd}_t), \quad \text{NaN if } \text{fwd}_t = 0 \text{ or } \text{bars\_left}_t < h$$
+$$y^{\text{sign}}_t = \text{sign}(\text{fwd}_t), \quad \text{NaN if } \text{fwd}_t = 0 \text{ or } \text{bars left}_t < h$$
 
 ---
 
@@ -244,8 +244,8 @@ Because the meta-model incorporates raw $p_{\text{up}}$ as an input feature, raw
 
 #### Intraday SHAP Driver Agreement Gate
 Intraday trees can occasionally be swayed by slow daily features (`prev_day_ret`, `prev_day_range`), attempting to buy counter-trend dips or short into the hole. The Intraday Driver Agreement Gate in `src/models.py` enforces directional consistency using the native LightGBM Tree SHAP contribution vector (`pred_contrib=True`):
-- **For UP signals**: Suppressed to `direction = "none"` if `day_ret` SHAP contribution $< -0.025$, `rsi_14` SHAP contribution $< -0.025$, or intraday $day\_ret \le -0.004$ (prevents buying late-day dead-cat bounces). On strong bullish rally days ($day\_ret > 0.002, day\_ret\_shap \ge 0.0$), top-decile intraday conviction ($p_{\text{up}} \ge 0.52, bar\_idx \ge 6$) is permitted to capture sustained multi-hour rallies.
-- **For DOWN signals**: Suppressed to `direction = "none"` if $day\_ret < 0$ and $rsi_{14} < 53.0$ (prevents chasing shorts into an oversold hole without an intraday bounce).
+- **For UP signals**: Suppressed to `direction = "none"` if `day_ret` SHAP contribution $< -0.025$, `rsi_14` SHAP contribution $< -0.025$, or intraday `day_ret` $\le -0.004$ (prevents buying late-day dead-cat bounces). On strong bullish rally days (`day_ret` $> 0.002$, `day_ret` SHAP $\ge 0.0$), top-decile intraday conviction ($p_{\text{up}} \ge 0.52$, `bar_idx` $\ge 6$) is permitted to capture sustained multi-hour rallies.
+- **For DOWN signals**: Suppressed to `direction = "none"` if `day_ret` $< 0$ and `rsi_14` $< 53.0$ (prevents chasing shorts into an oversold hole without an intraday bounce).
 
 ---
 

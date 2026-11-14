@@ -43,14 +43,16 @@ src/live/
 - **Zero-Volume Protection**: If aggregated volume is 0, candle VWAP cleanly falls back to close price without raising `ZeroDivisionError`.
 - **Late Bar Rejection**: Minute bars arriving after a bucket has been finalised are rejected and logged as `late_minute_bar` health events.
 - **Deterministic Finalisation Order**: Every 5 minutes at `t + grace_seconds`, buckets finalise in strict sequence:
-  $$\text{SPY} \longrightarrow \text{QQQ} \longrightarrow \text{AAPL} \longrightarrow \text{predictor.on\_bucket\_closed} \longrightarrow \text{scorer.resolve\_due}$$
+  ```
+  SPY ──► QQQ ──► AAPL ──► predictor.on_bucket_closed ──► scorer.resolve_due
+  ```
 - **Data Quality Handling**: If the primary symbol (AAPL) bucket has no valid minute bars, collector logs `missing_aapl_candle` and notifies predictor with `quality_ok=False`, writing a `direction='none'`, `reason='data_quality'` signal row.
 - **NYSE Calendar**: Full session boundaries (09:30–16:00 ET, 78 bars) and half-day boundaries (09:30–13:00 ET, 42 bars) with hardcoded 2026 Thanksgiving/Christmas early close and holiday fallbacks.
 - **Watchdog & REST Backfill**: Automatic `stale_feed` detection if no bar arrives for >90s during market hours, with REST backfill supporting `now - 16 min` fallbacks on Alpaca IEX data.
 
 ### 2.3 Live Predictor (`src/live/predictor.py`)
 - **Clock-Based Bar Indexing**: In live operation, `bar_idx` is computed directly from clock time:
-  $$\text{bar\_idx} = \lfloor(\text{hour} \times 60 + \text{minute} - 570) / 5\rfloor$$
+  $$\text{bar index} = \lfloor(\text{hour} \times 60 + \text{minute} - 570) / 5\rfloor$$
   This ensures that missing candles in an earlier bucket do not cause an artificial index drift for subsequent bars.
 - **Zero Train/Serve Skew**: Directly invokes `src.models.make_signal()` on the history frame reconstructed from SQLite candles, producing byte-identical feature hashes and identical decision paths.
 - **Dynamic Horizon**: Extracts `horizon_bars` directly from the bundle configuration ($h=12$), calculating `horizon_minutes = 60` dynamically without hardcoding.
@@ -58,7 +60,7 @@ src/live/
 
 ### 2.4 Live Scorer (`src/live/scorer.py`)
 - **Range Query Resolution**: At each closed bucket, queries candidate unresolved signals where:
-  $$\text{candle\_ts} \le \text{current\_bucket\_ts} - h \times 5\text{m}$$
+  $$\text{candle timestamp} \le \text{current bucket timestamp} - h \times 5\text{m}$$
 - **Entry & Exit Fallbacks**:
   - Entry price is the open of $t + 1$ (5m after signal). If missing, logs `missing_entry_candle` and falls back to close of $t$.
   - Exit price is the close of $t + h$. If missing, searches for the next available candle in the same session, logging `late_exit_candle`.
