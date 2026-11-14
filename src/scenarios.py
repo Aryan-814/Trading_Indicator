@@ -111,6 +111,24 @@ def build_analog_table(
     return analog_df, {"v_q33": v_q33, "v_q66": v_q66}
 
 
+VOL_LABEL_MAP = {
+    "low": "low volatility",
+    "low_vol": "low volatility",
+    "mid": "normal volatility",
+    "mid_vol": "normal volatility",
+    "normal": "normal volatility",
+    "high": "high volatility",
+    "high_vol": "high volatility",
+}
+
+TIME_LABEL_MAP = {
+    "open": "opening session",
+    "mid": "midday",
+    "afternoon": "afternoon",
+    "close": "closing hour",
+}
+
+
 def lookup_analog_narrative(
     analog_table: pd.DataFrame,
     vol_bin: str,
@@ -146,9 +164,12 @@ def lookup_analog_narrative(
         med_val = row.get("median") if "median" in row else row.get("median_ret", 0.0)
         med_ret = float(med_val * 100)
 
+        vol_label = VOL_LABEL_MAP.get(vol_bin.lower(), vol_bin)
+        time_label = TIME_LABEL_MAP.get(time_bin.lower(), time_bin)
+
         narrative = (
             f"Model leans {side_direction.upper()} ({conf_pct:.0f}%) over the next {horizon_min} min. "
-            f"In similar past conditions ({vol_bin}, {time_bin}; n={n_samples}), "
+            f"In similar past conditions ({vol_label}, {time_label}; n={n_samples}), "
             f"the next move continued {side_direction} {cont_pct:.0f}% of the time "
             f"and reversed {rev_pct:.0f}% of the time (median: {med_ret:+.2f}%)."
         )

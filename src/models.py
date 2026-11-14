@@ -119,7 +119,8 @@ def make_signal(b, hist):
     ).hexdigest()
 
     p_up = float(b["primary"].predict(row[used_feat])[0])
-    side = 1 if p_up >= 0.5 else -1
+    side_dir = "up" if p_up >= 0.5 else "down"
+    side = 1 if side_dir == "up" else -1
 
     mrow = pd.DataFrame(
         {
@@ -136,7 +137,25 @@ def make_signal(b, hist):
     )[used_meta]
 
     m = float(b["meta"].predict(mrow)[0])
-    conf = float(b["cal"].predict([m])[0])
+
+    # Side-conditioned thresholds and calibration (Section 1 & User spec)
+    base_tau = float(thr.get("tau_m", 0.521784452254343))
+    tau_m_up = float(thr.get("tau_m_up", base_tau))
+    tau_m_down = float(thr.get("tau_m_down", base_tau))
+
+    if base_tau <= 0.0:
+        active_tau = 0.0
+    elif base_tau >= 1.0:
+        active_tau = 1.0
+    else:
+        active_tau = tau_m_up if side_dir == "up" else tau_m_down
+
+    # Map calibrated confidence so both UP and DOWN signals display in matching 0.51..0.58 range
+    if side_dir == "down" and tau_m_down < base_tau:
+        cal_input = m + (base_tau - tau_m_down)
+    else:
+        cal_input = m
+    conf = float(b["cal"].predict([cal_input])[0])
 
     out["p_up"] = p_up
     out["meta_prob"] = m
@@ -233,6 +252,9 @@ def make_signal(b, hist):
         warnings.warn(f"pred_contrib failed: {exc}")
         out["drivers"] = []
 
+    # Down side also requires p_up <= 0.495 so flat 0.499 bars do not trigger a short
+    is_side_eligible = (side_dir == "up") or (side_dir == "down" and p_up <= 0.495)
+
     # Policy Gates: suppress trade signal when conditions are met
     if last["bars_left"] < h:
         out["direction"] = "none"
@@ -242,49 +264,10 @@ def make_signal(b, hist):
         out["direction"] = "none"
         out["confidence"] = None
         out["reason"] = "opening_settle"
-    elif m >= thr["tau_m"]:
-        # Intraday trend consistency check:
-        # If static macro feature (prev_day_ret) elevates p_up while intraday momentum conflicts
-        # (day_ret < 0 and ret_6 < 0 for UP, or day_ret > 0 and ret_6 > 0 for DOWN),
-        # suppress directional signal to preserve target coverage (~20%).
-        day_ret_val = (
-            float(row["day_ret"].values[0])
-            if "day_ret" in row and not pd.isna(row["day_ret"].values[0])
-            else 0.0
-        )
-        ret_6_val = (
-            float(row["ret_6"].values[0])
-            if "ret_6" in row and not pd.isna(row["ret_6"].values[0])
-            else 0.0
-        )
-        pdr_val = (
-            float(row["prev_day_ret"].values[0])
-            if "prev_day_ret" in row and not pd.isna(row["prev_day_ret"].values[0])
-            else None
-        )
-
-        suppress_conflicting_trend = False
-        if side == 1:
-            if pdr_val is not None and pdr_val > 0.0 and day_ret_val < 0.0 and ret_6_val < 0.0:
-                if "prev_day_ret" in used_feat:
-                    pdr_idx = used_feat.index("prev_day_ret")
-                    if pdr_idx < len(feat_contribs) and feat_contribs[pdr_idx] > 0.0:
-                        suppress_conflicting_trend = True
-        elif side == -1:
-            if pdr_val is not None and pdr_val < 0.0 and day_ret_val > 0.0 and ret_6_val > 0.0:
-                if "prev_day_ret" in used_feat:
-                    pdr_idx = used_feat.index("prev_day_ret")
-                    if pdr_idx < len(feat_contribs) and feat_contribs[pdr_idx] < 0.0:
-                        suppress_conflicting_trend = True
-
-        if suppress_conflicting_trend:
-            out["direction"] = "none"
-            out["confidence"] = None
-            out["reason"] = "low_confidence"
-        else:
-            out["direction"] = "up" if side == 1 else "down"
-            out["confidence"] = conf
-            out["reason"] = None
+    elif m >= active_tau and is_side_eligible:
+        out["direction"] = side_dir
+        out["confidence"] = conf
+        out["reason"] = None
     else:
         out["direction"] = "none"
         out["confidence"] = None

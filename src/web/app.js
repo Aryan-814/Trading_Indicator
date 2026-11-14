@@ -255,23 +255,44 @@
     });
   }
 
-  // Update Markers Strictly Sorted by Time (v4.2.0 Requirement)
+  // Update Markers Strictly Sorted by Time (v4.2.0 Requirement) with De-Cluttering
   function renderMarkers() {
     if (!state.candleSeries) return;
     const colors = getPaletteColors();
-    const markers = [];
+    const rawSignals = [];
 
     for (const [ts, sig] of state.signalsMap.entries()) {
       const dir = sig.direction;
       if (dir !== "up" && dir !== "down") continue;
+      rawSignals.push({
+        ts,
+        sig,
+        epochSec: parseIsoToEpochSeconds(ts),
+        dir,
+      });
+    }
 
-      const epochSec = parseIsoToEpochSeconds(ts);
+    // Sort strictly ascending by time
+    rawSignals.sort((a, b) => a.epochSec - b.epochSec);
+
+    const markers = [];
+    const lastLabeledTime = { up: -Infinity, down: -Infinity };
+
+    for (const item of rawSignals) {
+      const { ts, sig, epochSec, dir } = item;
       const isUp = dir === "up";
       const confPct = Math.round((sig.confidence || sig.diagnostic_confidence || 0.5) * 100);
 
-      let markSuffix = "";
-      if (sig.correct !== null && sig.correct !== undefined) {
-        markSuffix = sig.correct === 1 ? " ✓" : " ✗";
+      const markSuffix = sig.correct === 1 ? " ✓" : (sig.correct === 0 ? " ✗" : "");
+      const checkmarkOnly = sig.correct === 1 ? "✓" : (sig.correct === 0 ? "✗" : "");
+      const fullText = `${isUp ? "UP" : "DN"} ${confPct}%${markSuffix}`;
+
+      // Set full text if at least 3 bars (900 seconds) away from previous labeled signal in same direction
+      const isSeparated = (epochSec - lastLabeledTime[dir]) >= 900;
+      const markerText = isSeparated ? fullText : checkmarkOnly;
+
+      if (isSeparated) {
+        lastLabeledTime[dir] = epochSec;
       }
 
       markers.push({
@@ -279,7 +300,7 @@
         position: isUp ? "belowBar" : "aboveBar",
         color: isUp ? colors.up : colors.down,
         shape: isUp ? "arrowUp" : "arrowDown",
-        text: `${isUp ? "UP" : "DN"} ${confPct}%${markSuffix}`,
+        text: markerText,
         id: ts,
       });
     }
@@ -298,41 +319,58 @@
     state.candleSeries.setMarkers(deduplicated);
   }
 
-  // Task 3.4: Populate Full 78-Cell Signal History Strip & Enable Click-to-Inspect
+  // Task 3.4: Populate Signal History Strip for Full Visible Multi-Day Window
   function renderSignalStrip() {
     el.signalStrip.innerHTML = "";
     const colors = getPaletteColors();
 
-    // Determine current/latest session date
-    let sessionDateStr = null;
-    if (state.latestCandle) {
-      const d = new Date(normalizeUtcIso(state.latestCandle.ts_start));
-      sessionDateStr = d.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-    } else {
-      sessionDateStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    // Collect distinct session dates in chronological order from loaded candles and signals
+    const dateSet = new Set();
+    for (const [ts] of state.candlesMap.entries()) {
+      const d = new Date(normalizeUtcIso(ts));
+      dateSet.add(d.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
+    }
+    for (const [ts] of state.signalsMap.entries()) {
+      const d = new Date(normalizeUtcIso(ts));
+      dateSet.add(d.toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
+    }
+    let sessionDates = Array.from(dateSet).sort();
+    if (sessionDates.length === 0) {
+      sessionDates = [new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" })];
     }
 
-    // Generate 78 5-minute bucket timestamps (09:30 to 15:55 ET) using accurate NY daylight offset
-    const sessionBuckets = [];
-    for (let barIdx = 0; barIdx < 78; barIdx++) {
-      const totalMinutes = 9 * 60 + 30 + barIdx * 5;
-      const h = Math.floor(totalMinutes / 60);
-      const m = totalMinutes % 60;
-      const hStr = h.toString().padStart(2, "0");
-      const mStr = m.toString().padStart(2, "0");
-      const bucketIso = getUtcIsoForNyTime(sessionDateStr, h, m);
+    // Generate 78 5-minute bucket timestamps (09:30 to 15:55 ET) for each visible session date
+    const allBuckets = [];
+    for (let dayIdx = 0; dayIdx < sessionDates.length; dayIdx++) {
+      const dateStr = sessionDates[dayIdx];
+      for (let barIdx = 0; barIdx < 78; barIdx++) {
+        const totalMinutes = 9 * 60 + 30 + barIdx * 5;
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        const hStr = h.toString().padStart(2, "0");
+        const mStr = m.toString().padStart(2, "0");
+        const bucketIso = getUtcIsoForNyTime(dateStr, h, m);
 
-      sessionBuckets.push({
-        barIdx,
-        timeLabel: `${hStr}:${mStr} ET`,
-        bucketIso,
-      });
+        allBuckets.push({
+          dateStr,
+          dayIdx,
+          barIdx,
+          timeLabel: `${dateStr} ${hStr}:${mStr} ET`,
+          bucketIso,
+        });
+      }
     }
 
-    for (const b of sessionBuckets) {
+    for (let i = 0; i < allBuckets.length; i++) {
+      const b = allBuckets[i];
       const cell = document.createElement("div");
       cell.className = "strip-cell";
       cell.setAttribute("data-ts", b.bucketIso);
+
+      // Add visual delimiter between consecutive session days
+      if (b.barIdx === 0 && b.dayIdx > 0) {
+        cell.style.borderLeft = "2px solid var(--color-border)";
+      }
 
       const sig = state.signalsMap.get(b.bucketIso);
       const candle = state.candlesMap.get(b.bucketIso);
