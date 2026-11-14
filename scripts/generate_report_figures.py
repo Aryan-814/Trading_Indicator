@@ -199,3 +199,4 @@ plt.savefig('reports/figures/fig6_pnl_performance.png', bbox_inches='tight')
 plt.close()
 
 print('All 6 figures generated successfully in reports/figures/')
+
