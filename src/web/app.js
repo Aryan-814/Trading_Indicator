@@ -248,11 +248,28 @@
       }
     });
 
-    window.addEventListener("resize", () => {
-      if (state.chart) {
-        state.chart.applyOptions({ width: el.chartContainer.clientWidth });
+    const resizeHandler = () => {
+      if (state.chart && el.chartContainer) {
+        const w = el.chartContainer.clientWidth;
+        if (w > 0) {
+          state.chart.applyOptions({ width: w });
+        }
       }
-    });
+    };
+
+    window.addEventListener("resize", resizeHandler);
+
+    if (window.ResizeObserver && el.chartContainer) {
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const w = Math.floor(entry.contentRect.width);
+          if (w > 0 && state.chart) {
+            state.chart.applyOptions({ width: w });
+          }
+        }
+      });
+      ro.observe(el.chartContainer);
+    }
   }
 
   // Update Markers Strictly Sorted by Time (v4.2.0 Requirement) with De-Cluttering
@@ -361,15 +378,20 @@
       }
     }
 
+    // Use gap: 0px for high cell counts to ensure zero pixel overflow
+    el.signalStrip.style.gap = allBuckets.length > 100 ? "0px" : "1px";
+
     for (let i = 0; i < allBuckets.length; i++) {
       const b = allBuckets[i];
       const cell = document.createElement("div");
       cell.className = "strip-cell";
       cell.setAttribute("data-ts", b.bucketIso);
+      cell.style.flex = "1 1 0%";
+      cell.style.minWidth = "0px";
 
-      // Add visual delimiter between consecutive session days
+      // Add visual delimiter between consecutive session days (Nov 9, 10, 11, 12, 13)
       if (b.barIdx === 0 && b.dayIdx > 0) {
-        cell.style.borderLeft = "2px solid var(--color-border)";
+        cell.style.borderLeft = "1px solid rgba(255, 255, 255, 0.25)";
       }
 
       const sig = state.signalsMap.get(b.bucketIso);
