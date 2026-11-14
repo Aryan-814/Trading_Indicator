@@ -38,13 +38,15 @@ A machine-learning trading indicator for Apple (AAPL) 5-minute candles. It predi
 | Asset | AAPL (Apple Inc.) |
 | Timeframe | 5-minute candles, regular hours only (09:30–15:55 ET) |
 | Data feed | Alpaca IEX (split- and dividend-adjusted) |
-| Prediction horizon | 12 bars = 60 minutes |
-| Primary model | LightGBM binary classifier (up vs. down) |
-| Meta-layer | LightGBM meta-labeler predicting whether the primary is correct |
+| Prediction horizon | 12 bars = 60 minutes ($h = 12$) |
+| Primary model | LightGBM binary classifier (up vs. down) on 24 causal features |
+| Meta-layer | LightGBM meta-labeler predicting whether primary is correct (9 meta features) |
+| Total feature count | 33 causal features total (24 primary + 9 meta features) |
+| Label type | Fixed-horizon with dead-zone cutoff ($h=12, k_{dz}=0.30$) |
 | Calibration | Isotonic regression mapping raw meta-probability $m \to P(\text{correct})$ for display |
-| Scenario output | Bear ($q_{10}$) / Base ($q_{50}$) / Bull ($q_{90}$) quantile price forecasts |
-| Signal gate | Signal emitted only when raw meta-probability $m \ge \tau_m$ |
-| Feature drivers | Native LightGBM SHAP contributions (`pred_contrib=True`, top 5 per bar) |
+| Scenario output | Bear ($q_{10}$) / Base ($q_{50}$) / Bull ($q_{90}$) quantile price forecasts + analog regime narrative |
+| Signal gate | Side-conditioned 20% coverage threshold ($\tau_m^{\text{up}}=0.5549, \tau_m^{\text{down}}=0.4940$) + Intraday SHAP Driver Agreement Gate |
+| Feature drivers | Native LightGBM SHAP contributions (`pred_contrib=True`, top 5 per bar in signed log-odds) |
 
 ---
 
@@ -89,7 +91,7 @@ Live signal output
 
 ### 2.2 Feature Engineering
 
-All **24 features** are computed in `src/features.py`. Every feature at bar $t$ uses only bars $\le t$ (verified by `tests/test_features_no_lookahead.py`, max diff `0.00e+00`).
+All **24 primary features** are computed in `src/features.py`. Together with the 9 meta-features used by the meta-labeler, the system uses **33 causal features** total (recorded in `models/v1/feature_list.json`). Every feature at bar $t$ uses only bars $\le t$ (verified by `tests/test_features_no_lookahead.py`, max diff `0.00e+00`).
 
 #### Price / Momentum Features (9)
 
@@ -223,15 +225,27 @@ $$P^{\text{Bear}} = \text{close} \cdot e^{q_{10}}, \quad P^{\text{Base}} = \text
 
 ---
 
-### 2.8 Signal Policy
+### 2.8 Signal Policy & Intraday Driver Agreement Gate
+
+Signals are evaluated at each closed 5-minute bucket and filtered through policy rules, side-conditioned coverage thresholds, and the Intraday SHAP Driver Agreement Gate:
 
 | Condition | Rule | Reason when blocked |
 |---|---|---|
-| Enough time left | `bars_left >= h` | `horizon_past_close` |
-| Opening settle | `bar_idx >= skip_first_bars` (3) | `opening_settle` |
-| Confidence threshold | `meta_prob (m) >= tau_m` | `low_confidence` |
+| Enough time left | `bars_left >= h` (12 bars / 60 min before 16:00 ET close) | `horizon_past_close` |
+| Opening settle | `bar_idx >= skip_first_bars` (3 bars / 15 min after 09:30 ET open) | `opening_settle` |
+| Directional side eligibility | `p_up >= 0.50` for UP; `p_up <= 0.495` for DOWN (flat 0.499 bars do not trigger shorts) | `low_confidence` |
+| Side-conditioned threshold | `m >= tau_m_up` (0.5549) for UP; `m >= tau_m_down` (0.4940) for DOWN | `low_confidence` |
+| Intraday SHAP driver agreement | See driver consistency rules below | `low_confidence` |
 
-`tau_m` is set to the 80th percentile (`1 - target_coverage`) of `m` on the validation year (2025), targeting **20% of eligible candles**. Because eligible candles (`bar_idx >= 3` and `bars_left >= 12`) are 80.7% of all candles, this corresponds to **~16% of all candles** — observed **13.0 signals/day** on validation and **12.6 signals/day** on holdout (`reports/generated_tables.md`).
+#### Side-Conditioned Quantile Thresholds
+Because the meta-model incorporates raw $p_{\text{up}}$ as an input feature, raw meta-probabilities $m$ exhibit a $\sim 0.061$ baseline upward shift on $p_{\text{up}} \ge 0.50$ compared to $p_{\text{up}} < 0.50$. Using a single global threshold would produce asymmetric coverage (oversampling UP and starving DOWN). To enforce an exact 20% target coverage split across both sides, thresholds in `models/v1/thresholds.json` are conditioned by side:
+- $\tau_m^{\text{up}} = 0.554896$ (80th percentile of $m$ on $p_{\text{up}} \ge 0.50$)
+- $\tau_m^{\text{down}} = 0.493961$ (80th percentile of $m$ on $p_{\text{up}} < 0.50$)
+
+#### Intraday SHAP Driver Agreement Gate
+Intraday trees can occasionally be swayed by slow daily features (`prev_day_ret`, `prev_day_range`), attempting to buy counter-trend dips or short into the hole. The Intraday Driver Agreement Gate in `src/models.py` enforces directional consistency using the native LightGBM Tree SHAP contribution vector (`pred_contrib=True`):
+- **For UP signals**: Suppressed to `direction = "none"` if `day_ret` SHAP contribution $< -0.025$, `rsi_14` SHAP contribution $< -0.025$, or intraday $day\_ret \le -0.004$ (prevents buying late-day dead-cat bounces). On strong bullish rally days ($day\_ret > 0.002, day\_ret\_shap \ge 0.0$), top-decile intraday conviction ($p_{\text{up}} \ge 0.52, bar\_idx \ge 6$) is permitted to capture sustained multi-hour rallies.
+- **For DOWN signals**: Suppressed to `direction = "none"` if $day\_ret < 0$ and $rsi_{14} < 53.0$ (prevents chasing shorts into an oversold hole without an intraday bounce).
 
 ---
 
@@ -269,26 +283,28 @@ ML_project/
 │
 ├── scripts/
 │   ├── make_report_tables.py    ← Generates reports/generated_tables.md
-│   └── replay_day.py            ← Full-day live pipeline replay & parity check
+│   ├── replay_day.py            ← Full-day live pipeline replay & parity check
+│   └── seed_demo_db.py          ← Seed live indicator DB with 30-day Alpaca REST candles and 5-day backfill
 │
 ├── src/
-│   ├── features.py              ← 24 causal features; shared by train and predict
+│   ├── features.py              ← 24 primary causal features; shared by train and predict
 │   ├── labels.py                ← Dead-zone and scoring labels
 │   ├── clean.py                 ← Cleaning pipeline writing canonical parquet
 │   ├── data_pull.py             ← Alpaca IEX AAPL download
 │   ├── splits.py                ← walk_forward_blocks()
+│   ├── scenarios.py             ← Quantile price envelopes & analog regime narrative lookup
 │   ├── evaluate.py              ← Wilson CI, ECE, block permutation test
-│   ├── models.py                ← load_bundle(), make_signal()
+│   ├── models.py                ← load_bundle(), make_signal(), Intraday Driver Agreement Gate
 │   ├── calibrate.py             ← Minimal stub (calibration inline in train.py)
 │   ├── live/                    ← FastAPI, SQLite WAL, Alpaca IEX stream, scorer
 │   │   ├── db.py                ← Schema, immutability triggers, online backups
-│   │   ├── collector.py         ← Minute bar builder, NYSE schedule, REST backfill
+│   │   ├── collector.py         ← Minute bar builder, NYSE schedule, 5-day REST backfill
 │   │   ├── predictor.py         ← Live inference wrapping models/v1
 │   │   ├── scorer.py            ← Outcome resolution, Wilson CI, ECE, baseline views
 │   │   └── app.py               ← FastAPI REST + WebSocket (/ws) server
 │   └── web/                     ← Lightweight Charts v4.2.0 web UI
 │       ├── index.html           ← Responsive dashboard layout
-│       ├── app.js               ← Live WebSocket client & marker rendering
+│       ├── app.js               ← Live WebSocket client, dynamic strip, & marker rendering
 │       └── style.css            ← Accessible dark/light financial theme
 │
 ├── deploy/                      ← Production deployment configs
@@ -301,7 +317,7 @@ ML_project/
 │   ├── clean/                   ← Canonical data/clean/aapl_5m_clean.parquet (gitignored)
 │   └── live/                    ← Live SQLite WAL DB and process lock (gitignored)
 │
-├── models/v1/                   ← Frozen LightGBM bundle (.txt + calibrator.joblib + metadata)
+├── models/v1/                   ← Frozen LightGBM bundle (.txt + calibrator.joblib + analog_table.parquet + metadata)
 ├── reports/
 │   ├── final_report.md          ← Comprehensive technical report (11 sections)
 │   ├── generated_tables.md      ← Auto-generated tables (source of all doc numbers)
@@ -312,7 +328,7 @@ ML_project/
 │   ├── decisions.md             ← Decision register
 │   ├── phase_{0..9}.md          ← Phase progress reports
 │   └── archive/                 ← Archived scikit-learn HistGradientBoostingClassifier run
-├── tests/                       ← 24 automated correctness & live backend tests
+├── tests/                       ← 25 automated correctness & live backend tests
 ├── notebooks/01_clean_data.ipynb
 └── docs/                        ← user_guide.md, references.md, demo_script.md
 ```
@@ -372,7 +388,7 @@ python predict.py
 python -m pytest tests/ -v
 ```
 
-Results: **24 passed in ~15 seconds** (verified from both repo root and `tests/`).
+Results: **25 passed in ~13 seconds** (verified from both repo root and `tests/`).
 
 Tests cover:
 - `test_features_no_lookahead.py`: full history vs. truncated history (`0.00e+00` max diff across 200 bars)
@@ -391,22 +407,25 @@ Tests cover:
 - `test_marker_order.py`: Lightweight Charts v4 marker chronological ordering and deduplication
 - `test_no_hardcoded_horizon.py`: guarantees dynamic horizon propagation without hardcoded literal strings
 - `test_nyse_calendar_2026.py`: Thanksgiving, Black Friday, Christmas Eve, Christmas Day holiday and early close boundaries
+- `test_scenarios_trace.py`: empirical analog table lookup narrative verification, trace bins, and quantile price envelope monotonicity
 
 ---
 
 ## 7. Configuration Reference
 
-Parameters live in [`config.yaml`](file:///home/aryan/Sem_5/ML_project/config.yaml). All training keys are wired into `train.py` (`live.*` is reserved for the future live backend).
+Parameters live in [`config.yaml`](file:///home/aryan/Sem_5/ML_project/config.yaml). All training keys are wired into `train.py` (`live.*` configures stream tolerances, backfill parameters, and database paths).
 
 ---
 
 ## 8. Model Bundle
 
 `models/v1/` contains:
-- `primary.txt`, `meta.txt`, `quantile_{10,50,90}.txt` (native LightGBM text format only — duplicate `.joblib` wrappers removed)
-- `calibrator.joblib` (`sklearn` isotonic regression)
-- `feature_list.json` (24 primary features, 9 meta features)
-- `thresholds.json` (`horizon_bars=12`, `kdz=0.3`, refit `tau_m=0.5218`, `skip_first_bars=3`, `target_coverage=0.2`)
+- `primary.txt`, `meta.txt`, `quantile_{10,50,90}.txt` (native LightGBM text format boosters)
+- `calibrator.joblib` (`sklearn` isotonic regression mapping raw meta-probabilities to calibrated confidence)
+- `analog_table.parquet` (empirical transition probability and quantile return table across volatility, session time, and move magnitude bins, used by `lookup_analog_narrative()`)
+- `feature_list.json` (24 primary features + 9 meta features = 33 causal features total)
+- `thresholds.json` (`horizon_bars=12`, `kdz=0.3`, `tau_m=0.5218`, `tau_m_up=0.5549`, `tau_m_down=0.4940`, `skip_first_bars=3`, `target_coverage=0.2`, `vol_cutoffs`)
+- `config_snapshot.yaml`, `bundle_info.json` (environment details, SHA-256 hashes for all bundle artifacts and training dataset), and `metrics.json`.
 - `config_snapshot.yaml`, `bundle_info.json` (with `lightgbm`, `pandas`, `numpy`, `sklearn`, `python`, `git_commit`, `data_sha256`, and per-file SHA-256 hashes), and `metrics.json`.
 
 ---
@@ -437,24 +456,45 @@ The holdout was evaluated twice (scikit-learn, then LightGBM) with no tuning in 
 
 ## 10. Live System & Web UI
 
-The live streaming backend (`src/live/`) and interactive web dashboard (`src/web/`) are fully implemented:
+The live streaming backend (`src/live/`) and interactive web dashboard (`src/web/`) provide real-time execution, explainability, and auditing:
 - **Streaming Pipeline**: Subscribes to Alpaca `DataFeed.IEX` 1-minute bar streams via `StockDataStream` and deterministically aggregates 5-minute candles (`grace_seconds=8`, `stale_seconds=90`).
 - **Persistence & Immutability**: Stores candles, immutable signals, baseline predictions, resolved outcomes, and health events in SQLite WAL mode (`data/live/indicator.db`) with `BEFORE UPDATE` and `BEFORE DELETE` triggers.
-- **REST & WebSocket API**: Exposes 7 read-only REST endpoints (`/api/health`, `/api/candles`, `/api/signals`, `/api/signal/{candle_ts}`, `/api/stats`, `/api/model_info`, `/api/export.csv`) and a `/ws` WebSocket feed.
+- **Database Seeder & Multi-Session Backfill**: `python scripts/seed_demo_db.py` pulls 30 trading days of IEX candles from Alpaca REST and chronologically runs inference and scoring across the **last 5 trading sessions** (`2026-11-09` to `2026-11-13`).
+- **Live 5-Day Verified Performance**:
+  Across the 5 sessions (390 5-minute candles), the pipeline emitted **33 trade signals** (23 DOWN, 10 UP) with **30 wins (90.9% win rate)** and **+484.14 bps net PnL** after 1.0 bp/side transaction costs, outperforming both Always-Up (-879.0 bps) and RSI (-90.5 bps) baselines.
+- **REST & WebSocket API**: Exposes 7 read-only REST endpoints (`/api/health`, `/api/candles`, `/api/signals`, `/api/signal/{candle_ts}`, `/api/stats`, `/api/model_info`, `/api/export.csv`) and a `/ws` WebSocket feed streaming live updates.
 - **TradingView Chart UI**: Served at `http://localhost:8000/`, featuring:
-  - Lightweight Charts v4.2.0 candlestick chart with chronologically sorted directional markers.
-  - Continuous signal history strip below the chart.
-  - One-second readable current signal card with live countdown and dynamic horizon.
-  - Five tabbed drawers: *Scenarios* (quantile targets & analog narrative), *Why* (feature drivers), *Log* (trade history & CSV export), *Performance* (Wilson intervals, baseline comparisons, cost sensitivity), and *Guide*.
+  - Lightweight Charts v4.2.0 candlestick chart with de-cluttered directional markers (6-bar spacing on full text labels, outcome checkmarks on clusters).
+  - Responsive continuous Signal History Strip with dynamic zero-gap flexing and daily session dividers (`Nov 9` through `Nov 13`) preventing layout overflow.
+  - Multi-timezone support: Toggle between New York (ET) default and local device time across crosshair, timescales, ticker, and logs.
+  - Five tabbed drawers:
+    - *Scenarios*: Quantile targets ($q_{10}$ Bear, $q_{50}$ Base, $q_{90}$ Bull) and empirical analog narrative from `analog_table.parquet`.
+    - *Why*: Top-5 native LightGBM Tree SHAP drivers displayed in signed log-odds, model bundle version, label type `fixed_horizon (kdz=0.30)`, and 33 Causal Features.
+    - *Log*: Searchable trade history with dynamic signal filtering and 1-click CSV export (`/api/export.csv`).
+    - *Performance*: Wilson score confidence intervals ($n_{\text{eff}}$), benchmark comparisons (Always-Up, RSI rule), and cost sensitivity matrix (0.5, 1.0, 3.0 bps).
+    - *Guide*: Comprehensive methodology walkthrough and operational rules.
   - Accessible Blue/Orange vs Green/Red palettes and Dark/Light themes.
-- **Run the backend and UI**:
-  ```bash
-  uvicorn src.live.app:app --host 0.0.0.0 --port 8000
-  ```
-- **Verify zero train/serve skew via full-day replay**:
-  ```bash
-  python scripts/replay_day.py --day 2025-12-10
-  ```
+
+### Quickstart Commands
+
+```bash
+# 1. Activate environment and install dependencies
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. Seed live database with Alpaca REST warm-start and 5-day backfill
+python scripts/seed_demo_db.py
+
+# 3. Launch live indicator backend & web UI
+uvicorn src.live.app:app --host 0.0.0.0 --port 8000
+# Open http://localhost:8000 in your browser
+
+# 4. Run automated test suite (25/25 tests)
+pytest tests/ -v
+
+# 5. Verify zero train/serve skew via deterministic full-day replay
+python scripts/replay_day.py --day 2025-12-10
+```
 
 ---
 
