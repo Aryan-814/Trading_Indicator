@@ -634,6 +634,9 @@
       const isPos = d.contribution >= 0;
       const label = friendlyNames[d.feature] || d.feature;
       const formattedVal = typeof d.value === "number" ? d.value.toFixed(4) : d.value;
+      const contribStr = typeof d.contribution === "number"
+        ? `${isPos ? "+" : ""}${d.contribution.toFixed(3)}`
+        : d.contribution;
 
       item.innerHTML = `
         <div>
@@ -641,7 +644,7 @@
           <span class="driver-val">(${formattedVal})</span>
         </div>
         <span class="driver-contrib ${isPos ? "pos" : "neg"}">
-          ${isPos ? "+" : ""}${(d.contribution * 100).toFixed(2)}%
+          ${contribStr}
         </span>
       `;
       el.driversList.appendChild(item);
@@ -758,8 +761,8 @@
 
         el.badgeModel.textContent = `Model: ${data.bundle_version || "v1"}`;
         el.whyModelVersion.textContent = `Bundle ${data.bundle_version || "v1"}`;
-        el.whyLabelType.textContent = data.label_type || "triple_barrier_kdz_0.3";
-        el.whyFeatCount.textContent = `${data.feature_count || 24} Causal Features`;
+        el.whyLabelType.textContent = data.label_type || "fixed_horizon (kdz=0.30)";
+        el.whyFeatCount.textContent = `${data.feature_count || 33} Causal Features`;
         el.guideHorizonText.textContent = `${state.horizonMinutes} minutes`;
         el.signalHorizonText.textContent = `Next ${state.horizonMinutes} min`;
       }

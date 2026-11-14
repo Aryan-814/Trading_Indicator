@@ -97,7 +97,8 @@ def test_rest_endpoints_and_websocket_snapshot(tmp_path: Path):
         info = r_info.json()
         assert info["horizon_bars"] == 12
         assert info["horizon_minutes"] == 60
-        assert info["feature_count"] == 24
+        assert info["feature_count"] == 33
+        assert info["label_type"] == "fixed_horizon (kdz=0.30)"
         assert info["kdz"] == 0.3
 
         # 7. GET /api/export.csv

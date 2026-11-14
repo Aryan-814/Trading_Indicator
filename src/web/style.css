@@ -558,8 +558,16 @@ body {
 .why-header {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   font-size: 0.85rem;
   font-weight: 700;
+}
+
+.why-subtitle {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-dim);
+  margin-top: 2px;
 }
 
 .model-tag {

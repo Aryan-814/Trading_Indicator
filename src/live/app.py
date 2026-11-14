@@ -343,26 +343,30 @@ def create_app(
                 "kdz": 0.3,
                 "tau_m": 0.5218,
                 "skip_first_bars": 3,
-                "feature_count": 0,
+                "feature_count": 33,
                 "feature_list": [],
-                "label_type": "triple_barrier_kdz_0.3",
+                "label_type": "fixed_horizon (kdz=0.30)",
             }
         thr = bundle.get("thr", {})
         info = bundle.get("info", {})
         flist = bundle.get("feature_list", {})
         h_bars = int(thr.get("horizon_bars", 12))
+        kdz_val = float(thr.get("kdz", 0.3))
+        feat_cols = flist.get("feat_cols", [])
+        meta_cols = flist.get("meta_cols", [])
+        total_feat_count = len(feat_cols) + len(meta_cols) if (len(feat_cols) + len(meta_cols)) > 0 else 33
         return {
             "bundle_version": str(info.get("bundle_version", info.get("version", "v1"))),
             "horizon_bars": h_bars,
             "horizon_minutes": h_bars * 5,
-            "kdz": float(thr.get("kdz", 0.3)),
+            "kdz": kdz_val,
             "tau_m": float(thr.get("tau_m", 0.5218)),
             "skip_first_bars": int(thr.get("skip_first_bars", 3)),
             "target_coverage": float(thr.get("target_coverage", 0.2)),
-            "feature_count": len(flist.get("feat_cols", [])),
-            "feature_list": flist.get("feat_cols", []),
-            "meta_feature_list": flist.get("meta_cols", []),
-            "label_type": f"triple_barrier_kdz_{thr.get('kdz', 0.3)}",
+            "feature_count": total_feat_count,
+            "feature_list": feat_cols,
+            "meta_feature_list": meta_cols,
+            "label_type": f"fixed_horizon (kdz={kdz_val:.2f})",
         }
 
     @application.get("/api/export.csv")
