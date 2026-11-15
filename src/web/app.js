@@ -1,7 +1,7 @@
 /**
  * AAPL Live Indicator Web Application
  * TradingView Lightweight Charts v4.2.0 Pinned API Contract
- * Engineering Remediation: Dynamic Timezone, Always-On Scenarios/Drivers, 78-Cell Strip
+ * Daylight Quant Dashboard Architecture
  */
 
 (function () {
@@ -52,6 +52,7 @@
     // Signal Card
     signalCandleTs: document.getElementById("signal-candle-ts"),
     signalIcon: document.getElementById("signal-icon"),
+    signalIconRing: document.getElementById("signal-icon-ring"),
     signalDirection: document.getElementById("signal-direction"),
     signalConfidence: document.getElementById("signal-confidence"),
     signalHorizonText: document.getElementById("signal-horizon-text"),
@@ -178,12 +179,22 @@
   function getPaletteColors() {
     const isGreenRed = document.body.classList.contains("green-red-theme");
     return {
-      up: isGreenRed ? "#10b981" : "#3b82f6",
-      down: isGreenRed ? "#ef4444" : "#f97316",
-      none: "#64748b",
-      stripNone: "#334155",
-      stripEmpty: "#1e293b",
+      up: isGreenRed ? "#059669" : "#2563EB",       // Emerald Green or Royal Blue (#2563EB)
+      down: isGreenRed ? "#DC2626" : "#EA580C",     // Crimson Red or Burnt Orange (#EA580C)
+      none: "#94A3B8",
+      stripNone: "#E2E8F0",
+      stripEmpty: "#F1F5F9",
     };
+  }
+
+  // Format narrative text with inline semantic colors
+  function formatNarrativeHtml(text) {
+    if (!text) return "";
+    return text
+      .replace(/\b(DOWN\s*\(\d+%\))/gi, '<strong style="color: #EA580C;">$1</strong>')
+      .replace(/\b(UP\s*\(\d+%\))/gi, '<strong style="color: #2563EB;">$1</strong>')
+      .replace(/(\+\d+\.\d+%\b)/g, '<strong style="color: #059669;">$1</strong>')
+      .replace(/(-\d+\.\d+%\b)/g, '<strong style="color: #DC2626;">$1</strong>');
   }
 
   // Initialise Lightweight Charts v4.2.0
@@ -193,28 +204,38 @@
       return;
     }
 
-    const isLight = document.body.classList.contains("light-theme");
+    const isDark = document.body.classList.contains("dark-theme");
     const colors = getPaletteColors();
 
     const chartOptions = {
       width: el.chartContainer.clientWidth,
       height: 480,
       layout: {
-        background: { color: isLight ? "#ffffff" : "#0f172a" },
-        textColor: isLight ? "#334155" : "#94a3b8",
+        background: { type: "solid", color: isDark ? "#0F172A" : "#FFFFFF" },
+        textColor: isDark ? "#94A3B8" : "#64748B",
       },
       grid: {
-        vertLines: { color: isLight ? "#f1f5f9" : "#1e293b" },
-        horzLines: { color: isLight ? "#f1f5f9" : "#1e293b" },
+        vertLines: { color: isDark ? "#1E293B" : "#F1F5F9" },
+        horzLines: { color: isDark ? "#1E293B" : "#F1F5F9" },
       },
       crosshair: {
         mode: LightweightCharts.CrosshairMode.Normal,
+        vertLine: {
+          color: "#94A3B8",
+          style: 2,
+          labelBackgroundColor: isDark ? "#1E293B" : "#F1F5F9",
+        },
+        horzLine: {
+          color: "#94A3B8",
+          style: 2,
+          labelBackgroundColor: isDark ? "#1E293B" : "#F1F5F9",
+        },
       },
       rightPriceScale: {
-        borderColor: isLight ? "#cbd5e1" : "#334155",
+        borderColor: isDark ? "#334155" : "#E2E8F0",
       },
       timeScale: {
-        borderColor: isLight ? "#cbd5e1" : "#334155",
+        borderColor: isDark ? "#334155" : "#E2E8F0",
         timeVisible: true,
         secondsVisible: false,
       },
@@ -239,7 +260,7 @@
     state.chart.subscribeClick((param) => {
       if (param && param.time) {
         // Find candle with matching epoch
-        for (const [ts, c] of state.candlesMap.entries()) {
+        for (const [ts] of state.candlesMap.entries()) {
           if (parseIsoToEpochSeconds(ts) === param.time) {
             inspectHistoricalSignal(ts);
             break;
@@ -304,7 +325,7 @@
       const checkmarkOnly = sig.correct === 1 ? "✓" : (sig.correct === 0 ? "✗" : "");
       const fullText = `${isUp ? "UP" : "DN"} ${confPct}%${markSuffix}`;
 
-      // Set full text if at least 6 bars (1800 seconds / 30 mins) away from previous labeled signal in same direction
+      // Set full text if at least 6 bars (1800 seconds) away from previous labeled signal in same direction
       const isSeparated = (epochSec - lastLabeledTime[dir]) >= 1800;
       const markerText = isSeparated ? fullText : checkmarkOnly;
 
@@ -336,7 +357,7 @@
     state.candleSeries.setMarkers(deduplicated);
   }
 
-  // Task 3.4: Populate Signal History Strip for Full Visible Multi-Day Window
+  // Populate Signal History Strip for Full Visible Multi-Day Window
   function renderSignalStrip() {
     el.signalStrip.innerHTML = "";
     const colors = getPaletteColors();
@@ -389,9 +410,9 @@
       cell.style.flex = "1 1 0%";
       cell.style.minWidth = "0px";
 
-      // Add visual delimiter between consecutive session days (Nov 9, 10, 11, 12, 13)
+      // Visual delimiter between consecutive session days
       if (b.barIdx === 0 && b.dayIdx > 0) {
-        cell.style.borderLeft = "1px solid rgba(255, 255, 255, 0.25)";
+        cell.style.borderLeft = "1px solid #CBD5E1";
       }
 
       const sig = state.signalsMap.get(b.bucketIso);
@@ -401,27 +422,27 @@
         const dir = (sig.direction || "none").toLowerCase();
         if (dir === "up") {
           cell.style.backgroundColor = colors.up;
-          cell.style.opacity = Math.max(0.45, Math.min(1.0, 0.45 + 0.55 * (sig.confidence || 0.5)));
+          cell.style.opacity = Math.max(0.65, Math.min(1.0, 0.45 + 0.55 * (sig.confidence || 0.5)));
           cell.title = `${b.timeLabel} | UP ${Math.round((sig.confidence || 0.5) * 100)}%`;
         } else if (dir === "down") {
           cell.style.backgroundColor = colors.down;
-          cell.style.opacity = Math.max(0.45, Math.min(1.0, 0.45 + 0.55 * (sig.confidence || 0.5)));
+          cell.style.opacity = Math.max(0.65, Math.min(1.0, 0.45 + 0.55 * (sig.confidence || 0.5)));
           cell.title = `${b.timeLabel} | DOWN ${Math.round((sig.confidence || 0.5) * 100)}%`;
         } else {
           cell.style.backgroundColor = colors.stripNone;
-          cell.style.opacity = "0.7";
+          cell.style.opacity = "1.0";
           const reasonLabel = sig.reason || "Abstain";
           cell.title = `${b.timeLabel} | NO SIGNAL (${reasonLabel})`;
         }
       } else if (candle) {
         // Candle closed but signal pending
         cell.style.backgroundColor = colors.stripNone;
-        cell.style.opacity = "0.5";
+        cell.style.opacity = "0.75";
         cell.title = `${b.timeLabel} | Evaluated (Awaiting signal)`;
       } else {
         // Future bar not yet reached
-        cell.style.backgroundColor = colors.stripEmpty;
-        cell.style.opacity = "0.3";
+        cell.style.backgroundColor = colors.stripNone;
+        cell.style.opacity = "0.35";
         cell.title = `${b.timeLabel} | Future bar`;
       }
 
@@ -437,7 +458,6 @@
   function inspectHistoricalSignal(candleTs) {
     let sig = state.signalsMap.get(candleTs);
     if (!sig) {
-      // Fetch from REST if not in map
       fetch(`/api/signal/${encodeURIComponent(candleTs)}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((fetched) => {
@@ -459,7 +479,7 @@
     updateSignalCard(sig);
   }
 
-  // Task 3.2: Update Current Signal Card (with NO SIGNAL enhancements)
+  // Update Current Signal Card
   function updateSignalCard(sig) {
     if (!sig) return;
     const colors = getPaletteColors();
@@ -481,45 +501,53 @@
 
     if (dir === "up") {
       el.signalIcon.textContent = "▲";
-      el.signalIcon.style.color = colors.up;
+      el.signalIcon.style.color = "#FFFFFF";
+      if (el.signalIconRing) {
+        el.signalIconRing.style.backgroundColor = colors.up;
+        el.signalIconRing.style.borderColor = colors.up;
+      }
       el.signalDirection.textContent = "UP";
       el.signalDirection.style.color = colors.up;
       el.signalConfidence.textContent = `${Math.round((sig.confidence || 0.5) * 100)}%`;
       el.signalReasonText.textContent = "Active bullish trade signal";
 
-      // Resolves at
       if (sig.candle_ts) {
         const resolveDt = new Date(new Date(sig.candle_ts).getTime() + horizonMin * 60 * 1000);
         el.signalResolveClock.textContent = `${formatTime(resolveDt.toISOString())} ET`;
       }
-      el.signalDiagnosticLean.textContent = "Active Trade";
-      el.signalDiagnosticLean.style.color = colors.up;
+      el.signalDiagnosticLean.innerHTML = `<span style="color: ${colors.up}; font-weight: 700;">ACTIVE UP</span>`;
     } else if (dir === "down") {
       el.signalIcon.textContent = "▼";
-      el.signalIcon.style.color = colors.down;
+      el.signalIcon.style.color = "#FFFFFF";
+      if (el.signalIconRing) {
+        el.signalIconRing.style.backgroundColor = colors.down;
+        el.signalIconRing.style.borderColor = colors.down;
+      }
       el.signalDirection.textContent = "DOWN";
       el.signalDirection.style.color = colors.down;
       el.signalConfidence.textContent = `${Math.round((sig.confidence || 0.5) * 100)}%`;
       el.signalReasonText.textContent = "Active bearish trade signal";
 
-      // Resolves at
       if (sig.candle_ts) {
         const resolveDt = new Date(new Date(sig.candle_ts).getTime() + horizonMin * 60 * 1000);
         el.signalResolveClock.textContent = `${formatTime(resolveDt.toISOString())} ET`;
       }
-      el.signalDiagnosticLean.textContent = "Active Trade";
-      el.signalDiagnosticLean.style.color = colors.down;
+      el.signalDiagnosticLean.innerHTML = `<span style="color: ${colors.down}; font-weight: 700;">ACTIVE DOWN</span>`;
     } else {
-      // NO SIGNAL: Fix contradictory resolve time & show diagnostic lean
-      el.signalIcon.textContent = "⚪";
-      el.signalIcon.style.color = colors.none;
+      // NO SIGNAL
+      el.signalIcon.textContent = "○";
+      el.signalIcon.style.color = "#CBD5E1";
+      if (el.signalIconRing) {
+        el.signalIconRing.style.backgroundColor = "#FFFFFF";
+        el.signalIconRing.style.borderColor = "#CBD5E1";
+      }
       el.signalDirection.textContent = "NO SIGNAL";
-      el.signalDirection.style.color = colors.none;
-      el.signalConfidence.textContent = "--%";
+      el.signalDirection.style.color = "#1E293B";
+      el.signalConfidence.textContent = "- - %";
       el.signalResolveClock.textContent = "— (No active trade)";
-      el.signalReasonText.textContent = reasonMap[sig.reason] || (sig.reason ? `Abstain: ${sig.reason}` : "Awaiting conviction");
+      el.signalReasonText.textContent = reasonMap[sig.reason] || (sig.reason ? `Abstain: ${sig.reason}` : "Confidence below conviction threshold");
 
-      // Diagnostic Lean
+      // Diagnostic Lean formatting
       const scen = sig.scenarios || {};
       const diagConf = scen.diagnostic_confidence || (sig.meta_prob != null ? sig.meta_prob : null);
       const lean = scen.lean || (sig.p_up != null ? (sig.p_up >= 0.5 ? "up" : "down") : null);
@@ -527,29 +555,30 @@
       if (diagConf != null && lean != null) {
         const confPct = Math.round(diagConf * 100);
         const tauPct = state.modelInfo ? Math.round((state.modelInfo.tau_m || 0.5218) * 100) : 52;
-        el.signalDiagnosticLean.textContent = `${lean.toUpperCase()} (${confPct}% vs ${tauPct}% threshold)`;
-        el.signalDiagnosticLean.style.color = "var(--color-text-dim)";
+        const isUpLean = lean.toLowerCase() === "up";
+        const leanColor = isUpLean ? colors.up : colors.down;
+        const leanText = isUpLean ? "UP" : "DOWN";
+        el.signalDiagnosticLean.innerHTML = `<strong style="color: ${leanColor}; font-weight: 700;">${leanText}</strong> (${confPct}% vs ${tauPct}% threshold)`;
       } else {
         el.signalDiagnosticLean.textContent = "Abstaining";
         el.signalDiagnosticLean.style.color = "var(--color-text-dim)";
       }
     }
 
-    // Scenarios Panel (Always rendered!)
+    // Scenarios Panel
     updateScenarios(sig);
 
-    // Why Panel (Always rendered!)
+    // Why Panel
     updateDrivers(sig);
   }
 
-  // Task 3.2 & 3.3: Update Scenarios Tab and Market Regime Footer
+  // Update Scenarios Tab and Market Regime Footer
   function updateScenarios(sig) {
     const scen = sig.scenarios || {};
     const refCandle = state.candlesMap.get(sig.candle_ts) || state.latestCandle;
     const refPrice = refCandle ? refCandle.close : 0.0;
     const hMin = sig.horizon_minutes || state.horizonMinutes || 60;
 
-    // Always render quantile price targets if scenarios exist
     if (scen.bear_q10 != null && scen.base_q50 != null && scen.bull_q90 != null) {
       const pBear = scen.bear_q10.toFixed(2);
       const pBase = scen.base_q50.toFixed(2);
@@ -570,14 +599,15 @@
       const confStr = scen.diagnostic_confidence
         ? Math.round(scen.diagnostic_confidence * 100)
         : Math.round((sig.confidence || 0.5) * 100);
-      el.scenBaseProb.textContent = `${leanStr} (${confStr}%)`;
+      el.scenBaseProb.textContent = `${leanStr.toLowerCase()} (${confStr}%)`;
 
       if (scen.narrative) {
-        el.narrativeText.textContent = scen.narrative;
+        el.narrativeText.innerHTML = formatNarrativeHtml(scen.narrative);
       } else {
-        el.narrativeText.textContent =
-          `Model lean: ${leanStr} ${confStr}% over the next ${hMin} min (median target $${pBase}). ` +
-          `Quantile regressors bound the 10th-to-90th percentile move between $${pBear} and $${pBull}.`;
+        const rawText =
+          `Model leans ${leanStr.toUpperCase()} (${confStr}%) over the next ${hMin} min. In similar ` +
+          `past conditions, quantile regressors bound the move between $${pBear} and $${pBull}.`;
+        el.narrativeText.innerHTML = formatNarrativeHtml(rawText);
       }
     } else {
       el.scenBearPrice.textContent = "---.--";
@@ -587,7 +617,7 @@
       el.narrativeText.textContent = `Awaiting next bucket to compute ${hMin}-minute quantile forecasts.`;
     }
 
-    // Task 3.2: Append policy note if horizon_past_close
+    // Policy note if horizon extends past close
     if (el.narrativePolicyNote) {
       if (sig.reason === "horizon_past_close") {
         el.narrativePolicyNote.classList.remove("hidden");
@@ -598,7 +628,7 @@
       }
     }
 
-    // Task 3.3: Dynamically update bottom-left regime footer
+    // Regime footer
     if (scen.regime) {
       const volMap = { low: "Low Volatility", mid: "Normal Volatility", high: "High Volatility" };
       const timeMap = {
@@ -607,13 +637,13 @@
         afternoon: "Afternoon Session",
         close: "Closing Hour",
       };
-      const vText = volMap[scen.regime.vol_bin] || "Normal Volatility";
-      const tText = timeMap[scen.regime.time_bin] || "Midday Session";
+      const vText = volMap[scen.regime.vol_bin] || "Low Volatility";
+      const tText = timeMap[scen.regime.time_bin] || "Afternoon Session";
       el.regimeText.textContent = `Market Regime: ${vText} | ${tText}`;
     }
   }
 
-  // Task 3.2: Update Why (Drivers) Tab - Always rendered!
+  // Update Why (Drivers) Tab
   function updateDrivers(sig) {
     const drivers = sig.drivers || [];
     el.driversList.innerHTML = "";
@@ -696,9 +726,9 @@
       const dirClass = isUp ? "text-up" : isDown ? "text-down" : "text-none";
       const confText = s.direction !== "none" ? `${Math.round((s.confidence || 0) * 100)}%` : "--";
 
-      let outcomeText = '<span style="color:#64748b">Pending</span>';
-      if (s.correct === 1) outcomeText = '<span style="color:#10b981;font-weight:700">✓ Win</span>';
-      else if (s.correct === 0) outcomeText = '<span style="color:#ef4444;font-weight:700">✗ Loss</span>';
+      let outcomeText = '<span style="color:#64748B">Pending</span>';
+      if (s.correct === 1) outcomeText = '<span style="color:#059669;font-weight:700">✓ Win</span>';
+      else if (s.correct === 0) outcomeText = '<span style="color:#DC2626;font-weight:700">✗ Loss</span>';
 
       const fwdRetText = s.fwd_ret != null ? `${(s.fwd_ret * 100).toFixed(2)}%` : "--";
       const pnlText = s.pnl_bps != null ? `${s.pnl_bps.toFixed(1)} bps` : "--";
@@ -782,6 +812,7 @@
         state.horizonMinutes = data.horizon_minutes || data.horizon_bars * 5 || 60;
 
         el.badgeModel.textContent = `Model: ${data.bundle_version || "v1"}`;
+        el.badgeModel.className = "badge badge-neutral";
         el.whyModelVersion.textContent = `Bundle ${data.bundle_version || "v1"}`;
         el.whyLabelType.textContent = data.label_type || "fixed_horizon (kdz=0.30)";
         el.whyFeatCount.textContent = `${data.feature_count || 33} Causal Features`;
@@ -798,7 +829,7 @@
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-    el.badgeFeed.textContent = "Feed: CONNECTING";
+    el.badgeFeed.textContent = "● Feed: CONNECTING";
     el.badgeFeed.className = "badge badge-warning";
 
     const ws = new WebSocket(wsUrl);
@@ -806,8 +837,8 @@
 
     ws.onopen = () => {
       console.log("WebSocket connected to live indicator");
-      el.badgeFeed.textContent = "Feed: LIVE";
-      el.badgeFeed.className = "badge badge-success";
+      el.badgeFeed.textContent = "● Feed: LIVE";
+      el.badgeFeed.className = "badge badge-feed-live";
       el.healthBanner.classList.add("hidden");
       state.wsBackoff = 1000;
     };
@@ -822,7 +853,7 @@
     };
 
     ws.onclose = () => {
-      el.badgeFeed.textContent = "Feed: DISCONNECTED";
+      el.badgeFeed.textContent = "● Feed: DISCONNECTED";
       el.badgeFeed.className = "badge badge-danger";
       el.healthBanner.classList.remove("hidden");
       el.healthBannerText.textContent = "Warning: Market feed disconnected. Reconnecting...";
@@ -935,7 +966,6 @@
           }
         }
         renderLogTable();
-        // Refresh performance stats from REST
         fetch("/api/stats")
           .then((r) => r.json())
           .then((st) => updatePerformance(st))
@@ -950,7 +980,7 @@
           el.badgeMarket.className = "badge badge-success";
         } else {
           el.badgeMarket.textContent = "Market: CLOSED";
-          el.badgeMarket.className = "badge";
+          el.badgeMarket.className = "badge badge-neutral";
         }
         break;
       }
@@ -963,7 +993,7 @@
     const changePct = ((candle.close - candle.open) / candle.open) * 100;
     const isUp = changePct >= 0;
     el.headerChange.textContent = `${isUp ? "+" : ""}${changePct.toFixed(2)}%`;
-    el.headerChange.style.color = isUp ? "var(--color-up)" : "var(--color-down)";
+    el.headerChange.className = `ticker-change ${isUp ? "up" : "down"}`;
     el.chartCandleTime.textContent = `Latest: ${formatTime(candle.ts_start)}`;
   }
 
@@ -999,29 +1029,83 @@
   function initControls() {
     el.tzSelect.addEventListener("change", updateChartTimezone);
 
-    el.colorToggle.addEventListener("click", () => {
-      document.body.classList.toggle("green-red-theme");
-      const isGreenRed = document.body.classList.contains("green-red-theme");
-      el.colorToggle.textContent = isGreenRed ? "Green/Red" : "Blue/Orange";
+    const handlePaletteToggle = (val) => {
+      let isGreenRed = false;
+      if (typeof val === "string") {
+        isGreenRed = val === "green-red";
+      } else {
+        isGreenRed = !document.body.classList.contains("green-red-theme");
+      }
+      if (isGreenRed) {
+        document.body.classList.add("green-red-theme");
+      } else {
+        document.body.classList.remove("green-red-theme");
+      }
+
+      if (el.colorToggle.tagName !== "SELECT") {
+        el.colorToggle.textContent = isGreenRed ? "Green / Red" : "Blue / Orange";
+      }
+      const colors = getPaletteColors();
+      if (state.candleSeries) {
+        state.candleSeries.applyOptions({
+          upColor: colors.up,
+          downColor: colors.down,
+          borderUpColor: colors.up,
+          borderDownColor: colors.down,
+          wickUpColor: colors.up,
+          wickDownColor: colors.down,
+        });
+      }
       renderMarkers();
       renderSignalStrip();
       const activeSig = state.inspectedSignal || state.latestSignal;
       if (activeSig) updateSignalCard(activeSig);
+    };
+
+    el.colorToggle.addEventListener("change", (e) => handlePaletteToggle(e.target.value));
+    el.colorToggle.addEventListener("click", () => {
+      if (el.colorToggle.tagName !== "SELECT") handlePaletteToggle();
     });
 
     el.themeToggle.addEventListener("click", () => {
-      document.body.classList.toggle("light-theme");
-      const isLight = document.body.classList.contains("light-theme");
-      el.themeToggle.textContent = isLight ? "Light" : "Dark";
+      document.body.classList.toggle("dark-theme");
+      const isDark = document.body.classList.contains("dark-theme");
+      const iconSpan = el.themeToggle.querySelector(".theme-icon");
+      const textSpan = el.themeToggle.querySelector(".theme-text");
+      if (iconSpan && textSpan) {
+        iconSpan.textContent = isDark ? "🌙" : "☀️";
+        textSpan.textContent = isDark ? "Dark" : "Daylight";
+      } else {
+        el.themeToggle.textContent = isDark ? "🌙 Dark" : "☀️ Daylight";
+      }
+
       if (state.chart) {
         state.chart.applyOptions({
           layout: {
-            background: { color: isLight ? "#ffffff" : "#0f172a" },
-            textColor: isLight ? "#334155" : "#94a3b8",
+            background: { type: "solid", color: isDark ? "#0F172A" : "#FFFFFF" },
+            textColor: isDark ? "#94A3B8" : "#64748B",
           },
           grid: {
-            vertLines: { color: isLight ? "#f1f5f9" : "#1e293b" },
-            horzLines: { color: isLight ? "#f1f5f9" : "#1e293b" },
+            vertLines: { color: isDark ? "#1E293B" : "#F1F5F9" },
+            horzLines: { color: isDark ? "#1E293B" : "#F1F5F9" },
+          },
+          crosshair: {
+            vertLine: {
+              color: "#94A3B8",
+              style: 2,
+              labelBackgroundColor: isDark ? "#1E293B" : "#F1F5F9",
+            },
+            horzLine: {
+              color: "#94A3B8",
+              style: 2,
+              labelBackgroundColor: isDark ? "#1E293B" : "#F1F5F9",
+            },
+          },
+          rightPriceScale: {
+            borderColor: isDark ? "#334155" : "#E2E8F0",
+          },
+          timeScale: {
+            borderColor: isDark ? "#334155" : "#E2E8F0",
           },
         });
       }
@@ -1055,7 +1139,7 @@
       .then((r) => r.json())
       .then((h) => {
         el.badgeMarket.textContent = h.market_open ? "Market: OPEN" : "Market: CLOSED";
-        el.badgeMarket.className = h.market_open ? "badge badge-success" : "badge";
+        el.badgeMarket.className = h.market_open ? "badge badge-success" : "badge badge-neutral";
       })
       .catch(() => {});
   }

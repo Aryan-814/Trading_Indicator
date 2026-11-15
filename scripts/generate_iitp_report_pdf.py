@@ -4,6 +4,7 @@ Strictly matches the exact typography, structure, and 14-page layout of Parth Si
 """
 import os
 import sys
+import shutil
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import (
@@ -52,25 +53,28 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
 
     styles = getSampleStyleSheet()
     
-    # Exact typography matching Parth Singla's PDF
-    header_super = ParagraphStyle('HeaderSuper', parent=styles['Normal'], fontName='Times-Bold', fontSize=10.5, leading=13, alignment=1, spaceAfter=8)
-    doc_title = ParagraphStyle('DocTitle', parent=styles['Normal'], fontName='Times-Bold', fontSize=14, leading=17, alignment=1, spaceAfter=10)
-    author_line = ParagraphStyle('AuthorLine', parent=styles['Normal'], fontName='Times-Bold', fontSize=9.5, leading=13, alignment=1, spaceAfter=3)
-    dept_line = ParagraphStyle('DeptLine', parent=styles['Normal'], fontName='Times-Roman', fontSize=9.5, leading=13, alignment=1, spaceAfter=14)
+    # Exact typography matching Parth Singla's PDF (Increased font size for readability)
+    header_super = ParagraphStyle('HeaderSuper', parent=styles['Normal'], fontName='Times-Bold', fontSize=11.0, leading=14, alignment=1, spaceAfter=7)
+    doc_title = ParagraphStyle('DocTitle', parent=styles['Normal'], fontName='Times-Bold', fontSize=14.5, leading=18, alignment=1, spaceAfter=9)
+    author_line = ParagraphStyle('AuthorLine', parent=styles['Normal'], fontName='Times-Bold', fontSize=10.0, leading=13.5, alignment=1, spaceAfter=3)
+    dept_line = ParagraphStyle('DeptLine', parent=styles['Normal'], fontName='Times-Roman', fontSize=10.0, leading=13.5, alignment=1, spaceAfter=11)
     
-    ch_heading = ParagraphStyle('ChapterHeading', parent=styles['Normal'], fontName='Times-Bold', fontSize=12, leading=15, spaceBefore=6, spaceAfter=6)
-    sec_heading = ParagraphStyle('SectionHeading', parent=styles['Normal'], fontName='Times-Bold', fontSize=10.5, leading=13, spaceBefore=5, spaceAfter=3)
-    subsec_heading = ParagraphStyle('SubSectionHeading', parent=styles['Normal'], fontName='Times-Bold', fontSize=9.5, leading=12, spaceBefore=4, spaceAfter=2)
+    ch_heading = ParagraphStyle('ChapterHeading', parent=styles['Normal'], fontName='Times-Bold', fontSize=12.5, leading=15.5, spaceBefore=5, spaceAfter=5)
+    sec_heading = ParagraphStyle('SectionHeading', parent=styles['Normal'], fontName='Times-Bold', fontSize=11.0, leading=13.5, spaceBefore=4, spaceAfter=2.5)
+    subsec_heading = ParagraphStyle('SubSectionHeading', parent=styles['Normal'], fontName='Times-Bold', fontSize=10.0, leading=12.5, spaceBefore=3, spaceAfter=2)
     
-    body = ParagraphStyle('BodyTextTimes', parent=styles['Normal'], fontName='Times-Roman', fontSize=9.0, leading=11.6, alignment=4, spaceAfter=4)
+    body = ParagraphStyle('BodyTextTimes', parent=styles['Normal'], fontName='Times-Roman', fontSize=9.8, leading=12.4, alignment=4, spaceAfter=3.5)
     bullet = ParagraphStyle('BulletTimes', parent=body, leftIndent=12, firstLineIndent=-8, spaceAfter=2)
     
-    tbl_cell = ParagraphStyle('TblCell', parent=styles['Normal'], fontName='Times-Roman', fontSize=8.0, leading=9.8)
+    tbl_cell = ParagraphStyle('TblCell', parent=styles['Normal'], fontName='Times-Roman', fontSize=8.2, leading=10.2)
     tbl_cell_bold = ParagraphStyle('TblCellBold', parent=tbl_cell, fontName='Times-Bold')
-    tbl_header = ParagraphStyle('TblHeader', parent=styles['Normal'], fontName='Times-Bold', fontSize=8.2, leading=10.0, alignment=1)
+    tbl_header = ParagraphStyle('TblHeader', parent=styles['Normal'], fontName='Times-Bold', fontSize=8.5, leading=10.5, alignment=1)
     
-    code_block = ParagraphStyle('CodeBlock', parent=styles['Normal'], fontName='Courier', fontSize=7.2, leading=8.8, spaceAfter=4)
-    fig_caption = ParagraphStyle('FigCaption', parent=styles['Normal'], fontName='Times-Roman', fontSize=8.5, leading=10.5, spaceBefore=3, spaceAfter=6)
+    code_block = ParagraphStyle('CodeBlock', parent=styles['Normal'], fontName='Courier', fontSize=7.6, leading=9.4, spaceAfter=3.5)
+    eq_block = ParagraphStyle('EqBlock', parent=styles['Normal'], fontName='Times-Roman', fontSize=9.0, leading=11.5, alignment=1, spaceAfter=3.5)
+    cmd_block = ParagraphStyle('CmdBlock', parent=styles['Normal'], fontName='Courier', fontSize=6.8, leading=8.6, spaceAfter=3.0)
+    algo_style = ParagraphStyle('AlgoBlock', parent=styles['Normal'], fontName='Times-Roman', fontSize=8.0, leading=12.0)
+    fig_caption = ParagraphStyle('FigCaption', parent=styles['Normal'], fontName='Times-Roman', fontSize=8.8, leading=11.0, spaceBefore=3, spaceAfter=5)
 
     story = []
 
@@ -87,37 +91,33 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
         "This report develops an automated machine-learning trading indicator to predict directional movements on 5-minute candlestick bars for Apple Inc. (AAPL). Intraday stock prices are heavily dominated by microstructural noise, heavy tails, and rapid edge decay after transaction costs. We ingest 120,504 regular market hours 5-minute bars from Alpaca's IEX feed (August 2020 through October 2026) and partition them chronologically into 92,284 training bars (2020–2024, 76.6%), 15,477 validation bars (2025, 12.8%), and 12,743 out-of-sample holdout bars (2026, 10.6%). Features are computed strictly using past data, with volume normalized against causal 20-day time-of-day medians. Our primary score is Selective Accuracy on the 20% most confident bars selected by secondary meta-labeling, alongside Expected Calibration Error (ECE) and net realised basis points (bps) after transaction costs.", body
     ))
     story.append(Paragraph(
-        "We first establish two non-deep baselines: an Always-Up majority prior (49.81% validation, 49.89% holdout) and a classical Wilder 14-period RSI rule (54.47% validation at 9.4% coverage, 49.70% holdout). We then construct a two-tier stacked LightGBM classifier: a primary model predicting forward 12-bar (60-minute) price direction on volatility dead-zone filtered samples (k_dz = 0.30, 24 causal features, 0.42M parameters), and a secondary meta-labeler (9 features, 0.18M parameters) predicting whether the primary model is correct. We calibrate probabilities using non-parametric Isotonic Regression and predict monotonic quantile return targets (q10 Bear, q50 Base, q90 Bull) alongside a 60-bin empirical regime analog table.", body
+        "We first establish two non-deep baselines: an Always-Up majority prior (49.81% validation, 49.89% holdout) and a classical Wilder 14-period RSI rule (54.47% validation at 9.4% coverage, 49.70% holdout). We then construct a two-tier stacked LightGBM classifier: a primary model predicting forward 12-bar (60-minute) price direction on volatility dead-zone filtered samples (<i>k</i><sub>dz</sub> = 0.30, 24 causal features, 0.42M parameters), and a secondary meta-labeler (9 features, 0.18M parameters) predicting whether the primary model is correct. We calibrate probabilities using non-parametric Isotonic Regression and predict monotonic quantile return targets (<i>q</i><sub>10</sub> Bear, <i>q</i><sub>50</sub> Base, <i>q</i><sub>90</sub> Bull) alongside a 60-bin empirical regime analog table.", body
     ))
     story.append(Paragraph(
-        "Over 16 validation search trials on 2025 data, we select horizon h = 12 and dead-zone k_dz = 0.30. Because meta-labeling incorporates primary probability p_up as an input feature, meta-probabilities exhibit an upward shift on p_up >= 0.50. We resolve this by enforcing side-conditioned 80th-percentile thresholds (tau_up = 0.5549, tau_down = 0.4940) and an Intraday SHAP Driver Agreement Gate to prevent daily feature memorization from buying into intraday selloffs.", body
-    ))
-    story.append(Paragraph(
-        "On the untouched 2026 holdout split, raw primary accuracy is 51.01% and selective policy accuracy is 50.80% (vs. Always-Up 50.76%, p = 0.3803), confirming Mesfin's (2026) finding that raw 5-minute equity moves are noise-dominated. However, in live multi-session backfilling across 5 consecutive sessions (November 09–13, 2026; 390 candles), the selective policy achieves a 90.9% win rate (30 wins / 3 losses) and +484.14 bps net PnL after costs, beating Always-Up (-879.0 bps) and RSI (-90.5 bps).", body
+        "Over 16 validation trials on 2025 data, we select horizon <i>h</i> = 12 and dead-zone <i>k</i><sub>dz</sub> = 0.30. Enforcing side-conditioned 80th-percentile thresholds (&tau;<sub>up</sub> = 0.5549, &tau;<sub>down</sub> = 0.4940) and an Intraday SHAP Driver Agreement Gate resolves meta-model baseline shifts and prevents buying into selloffs. On the untouched 2026 holdout split, raw primary accuracy is 51.01% and selective policy accuracy is 50.80% (vs. Always-Up 50.76%, <i>p</i> = 0.3803), confirming market noise dominance. However, in live multi-session backfilling across 5 consecutive sessions (November 09–13, 2026; 390 candles), the selective policy achieves a 90.9% win rate (30 wins / 3 losses) and +484.14 bps net PnL after costs, beating Always-Up (-879.0 bps) and RSI (-90.5 bps).", body
     ))
     
     story.append(Paragraph("<b>Table of Contents</b>", sec_heading))
-    toc_p = (
-        "<b>Preliminary Pages:</b> Title, Abstract, Table of Contents, List of Figures, Tables and Algorithms<br/>"
-        "<b>Chapter 1: Introduction</b> (1.1 Background and Motivation, 1.2 Problem Statement, 1.3 Objectives, 1.4 Scope of the Work, 1.5 Summary of Project Work and Contributions)<br/>"
-        "<b>Chapter 2: Literature Review</b> (2.1 Existing Approaches, 2.2 Limitations in Prior Work and Motivation for Our Setup)<br/>"
-        "<b>Chapter 3: Proposed Methodology</b> (3.1 Dataset Description and Audit, 3.2 Data Preprocessing and Split Protocol, 3.3 Exploratory Data Analysis, 3.4 Model Architectures and Modifications, 3.5 Loss Functions and Validation Search Procedure, 3.6 Experimental Setup)<br/>"
-        "<b>Chapter 4: Results and Discussion</b> (4.1 Evaluation Metrics, 4.2 Experimental Results, 4.3 Model and Component Comparisons, 4.4 Graphical Analysis of Figures, 4.5 Discussion of Findings and Limitations)<br/>"
-        "<b>Chapter 5: Conclusion and Future Scope</b> (5.1 Key Findings, 5.2 Limitations, 5.3 Future Research Directions)<br/>"
+    toc_lines = [
+        "<b>Preliminary Pages:</b> Title, Abstract, Table of Contents, List of Figures, Tables and Algorithms",
+        "<b>Chapter 1: Introduction</b> (1.1 Background and Motivation, 1.2 Problem Statement, 1.3 Objectives, 1.4 Scope of the Work, 1.5 Your Contributions)",
+        "<b>Chapter 2: Literature Review</b> (2.1 Existing Approaches, 2.2 Research Gaps and Motivation for Our Setup)",
+        "<b>Chapter 3: Proposed Methodology</b> (3.1 Dataset Description and Audit, 3.2 Data Preprocessing and Split Protocol, 3.3 Exploratory Data Analysis, 3.4 Proposed Model Architecture and Modifications, 3.5 Loss Functions, Validation Search, and Proposed Algorithm, 3.6 Experimental Setup)",
+        "<b>Chapter 4: Results and Discussion</b> (4.1 Performance Evaluation Metrics, 4.2 Experimental Results, 4.3 Comparison with Existing Models and Live Multi-Session Backfill, 4.4 Graphical Analysis, 4.5 Discussion of Findings and Limitations)",
+        "<b>Chapter 5: Conclusion and Future Scope</b> (5.1 Key Findings, 5.2 Limitations, 5.3 Future Research Directions)",
         "<b>End Matter:</b> References and Appendix (Dry-Run Sanity Check, Audit Notes, and Execution Commands)"
-    )
-    story.append(Paragraph(toc_p, body))
+    ]
+    for tl in toc_lines:
+        story.append(Paragraph(tl, ParagraphStyle('TOCItem', parent=styles['Normal'], fontName='Times-Roman', fontSize=8.8, leading=10.8, spaceAfter=1.5)))
     
+    story.append(Spacer(1, 3))
     story.append(Paragraph("<b>List of Figures, Tables and Algorithms</b>", sec_heading))
     list_items = [
         "Figure 3.1: Intraday Volatility Smile and Dead-Zone Class Partition across 120,504 AAPL Bars.",
         "Figure 3.2: Four-Channel Feature Distributions (ret_1, day_ret, rel_volume_log, rsi_14).",
         "Figure 3.3: End-to-End System Ingestion, Feature Engineering, Stacking, and Live UI Pipeline.",
         "Algorithm 3.1: Two-Tier Training, Meta-Labeling Search, and Intraday SHAP Agreement Procedure.",
-        "Table 3.1: Model Size, Parameter Count, and Inference Latency Benchmarks.",
-        "Table 4.1: Baseline Results (Runs B1 to B5 on Validation and Holdout Sets).",
-        "Table 4.2: Single-Component Ablations (Raw Primary, No Dead-Zone, No Meta-Labeler).",
-        "Table 4.3: Validation Sweep Trials (16 Logged Runs across Horizon and Dead-Zone Grid)."
+        "Table 3.1: Model Size, Parameter Count, and Inference Latency Benchmarks."
     ]
     for it in list_items:
         story.append(Paragraph(f"• {it}", bullet))
@@ -127,9 +127,12 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
     # PAGE 2: LIST CONT. & CHAPTER 1: INTRODUCTION
     # ==========================================
     list_items_cont = [
+        "Table 4.1: Baseline Results (Runs B1 to B5 on Validation and Holdout Sets).",
+        "Table 4.2: Single-Component Ablations (Raw Primary, No Dead-Zone, No Meta-Labeler).",
+        "Table 4.3: Validation Sweep Trials (16 Logged Runs across Horizon and Dead-Zone Grid).",
         "Table 4.4: Final Evaluation Performance Summary (Validation 2025 vs. Out-of-Sample Holdout 2026).",
         "Table 4.5: 5-Day Live Session Backfill Trade Performance Breakdown (Nov 09 – Nov 13, 2026).",
-        "Table 4.6: Net P&L Sensitivity Analysis Across Transaction Cost Scenarios (0.5, 1.0, 3.0 bps).",
+        "Table 4.6: Net P&amp;L Sensitivity Analysis Across Transaction Cost Scenarios (0.5, 1.0, 3.0 bps).",
         "Figure 4.1: Top 10 Causal Features Ranked by Native LightGBM Tree SHAP Contributions.",
         "Figure 4.2: 10-Bin Calibration Reliability Diagram on 2026 Holdout Evaluation.",
         "Figure 4.3: Cumulative Net Realised PnL Curve vs. Always-Up and RSI Baselines across 33 Live Signals.",
@@ -162,7 +165,7 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
     
     story.append(Paragraph("1.2 Problem Statement", sec_heading))
     story.append(Paragraph(
-        "The input is a sequence of regular-session 5-minute bars for AAPL, comprising OHLCV prices, candle VWAP, and trade count, transformed into 33 causal features. The output is a directional prediction (UP, DOWN, or NONE) for a forward horizon of h = 12 bars (60 minutes), alongside a calibrated confidence P(correct) in [0, 1] and monotonic quantile price targets (Bear q10, Base q50, Bull q90). The prediction horizon must never cross the overnight boundary. The model is trained on 2020–2024 data, validated on 2025, and tested on an untouched 2026 holdout dataset over 16 pre-registered trials.", body
+        "The input is a sequence of regular-session 5-minute bars for AAPL, comprising OHLCV prices, candle VWAP, and trade count, transformed into 33 causal features. The output is a directional prediction (UP, DOWN, or NONE) for a forward horizon of <i>h</i> = 12 bars (60 minutes), alongside a calibrated confidence <i>P</i>(correct) in [0, 1] and monotonic quantile price targets (Bear <i>q</i><sub>10</sub>, Base <i>q</i><sub>50</sub>, Bull <i>q</i><sub>90</sub>). The prediction horizon must never cross the overnight boundary. The model is trained on 2020–2024 data, validated on 2025, and tested on an untouched 2026 holdout dataset over 16 pre-registered trials.", body
     ))
     
     story.append(Paragraph("1.3 Objectives", sec_heading))
@@ -170,19 +173,18 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
     story.append(Paragraph("1. Build two non-deep baselines on the exact same data splits: an Always-Up majority prior and a classical Wilder RSI-14 rule.", bullet))
     story.append(Paragraph("2. Build and evaluate a two-tier stacked LightGBM classifier: a primary directional model and a secondary meta-labeler predicting primary correctness.", bullet))
     story.append(Paragraph("3. Incorporate causal feature engineering with zero lookahead bias, verified by automated unit tests.", bullet))
-    story.append(Paragraph("4. Formulate an automatic validation search to select horizon h and dead-zone k_dz, resolve meta-probability baseline shifts via side-conditioned thresholding, and enforce intraday SHAP driver consistency.", bullet))
+    story.append(Paragraph("4. Formulate an automatic validation search to select horizon <i>h</i> and dead-zone <i>k</i><sub>dz</sub>, resolve meta-probability baseline shifts via side-conditioned thresholding, and enforce intraday SHAP driver consistency.", bullet))
     story.append(Paragraph("5. Deploy the frozen architecture in an asynchronous live streaming backend (FastAPI, WebSockets, SQLite WAL) with database immutability triggers and a responsive TradingView chart UI.", bullet))
-    
+    story.append(PageBreak())
+
+    # ==========================================
+    # PAGE 3: SCOPE, CONTRIBUTIONS & LITERATURE REVIEW
+    # ==========================================
     story.append(Paragraph("1.4 Scope of the Work", sec_heading))
     story.append(Paragraph(
         "We utilize 120,504 cleaned 5-minute regular-hours bars (09:30–15:55 ET; 78 bars/day) for AAPL. All experiments run on a single Apple Silicon Mac with no external GPU. Our findings characterize an intraday equity setup with realistic 1 bp/side transaction costs, not unconstrained zero-fee backtests.", body
     ))
-    story.append(PageBreak())
-
-    # ==========================================
-    # PAGE 3: CONTRIBUTIONS & LITERATURE REVIEW
-    # ==========================================
-    story.append(Paragraph("1.5 Summary of Project Work and Contributions", sec_heading))
+    story.append(Paragraph("1.5 Your Contributions (Summary of Project Work and Contributions)", sec_heading))
     story.append(Paragraph("We separate existing methods in financial literature from the original engineering work conducted in this project. Our contributions are:", body))
     story.append(Paragraph(
         "1. <b>Zero-lookahead causal feature pipeline:</b> Engineered 33 causal features (24 primary + 9 meta). Causal relative volume and trade counts are normalized using 20-day rolling medians at the identical time-of-day bar_idx, strictly lagged by one day (shift(1)). Formally verified by unit test test_features_no_lookahead.py with 0.00e+00 difference.", bullet
@@ -191,7 +193,7 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
         "2. <b>Stacked meta-labeling architecture:</b> Implemented the López de Prado (2018) meta-labeling paradigm separating directional prediction from position confidence, restricting active trades to the 20% highest-conviction market regimes.", bullet
     ))
     story.append(Paragraph(
-        "3. <b>Side-conditioned quantile thresholding:</b> Discovered that meta-probabilities exhibit an upward baseline shift on p_up >= 0.50 (+0.061). Enforced side-conditioned 80th-percentile cutoffs (tau_up = 0.5549, tau_down = 0.4940) to guarantee an exact 20% target coverage split across both bullish and bearish environments.", bullet
+        "3. <b>Side-conditioned quantile thresholding:</b> Discovered that meta-probabilities exhibit an upward baseline shift on <i>p</i><sub>up</sub> &ge; 0.50 (+0.061). Enforced side-conditioned 80th-percentile cutoffs (&tau;<sub>up</sub> = 0.5549, &tau;<sub>down</sub> = 0.4940) to guarantee an exact 20% target coverage split across both bullish and bearish environments.", bullet
     ))
     story.append(Paragraph(
         "4. <b>Intraday SHAP Driver Agreement Gate:</b> Developed an explainability-based consistency filter using native LightGBM Tree SHAP vectors (pred_contrib=True) that suppresses signals swayed by slow daily features against strong intraday momentum, elevating live backfill performance to a 90.9% win rate (+484.14 bps net PnL).", bullet
@@ -220,10 +222,10 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
     # ==========================================
     # PAGE 4: LITERATURE GAPS & METHODOLOGY
     # ==========================================
-    story.append(Paragraph("2.2 Limitations in Prior Work and Motivation for Our Setup", sec_heading))
+    story.append(Paragraph("2.2 Research Gaps and Motivation for Our Setup", sec_heading))
     story.append(Paragraph("Three critical practical issues appear when prior trading literature is translated to production:", body))
     story.append(Paragraph(
-        "1. <b>Lookahead bias and overlapping label leakage:</b> Standard cross-validation splitters (KFold) randomly shuffle time-series data, leaking future prices into the past. Furthermore, when prediction horizon h > 1, consecutive return windows overlap. Purged and embargoed walk-forward cross-validation (López de Prado, 2018) is mandatory to prevent cross-fold contamination.", bullet
+        "1. <b>Lookahead bias and overlapping label leakage:</b> Standard cross-validation splitters (KFold) randomly shuffle time-series data, leaking future prices into the past. Furthermore, when prediction horizon <i>h</i> &gt; 1, consecutive return windows overlap. Purged and embargoed walk-forward cross-validation (López de Prado, 2018) is mandatory to prevent cross-fold contamination.", bullet
     ))
     story.append(Paragraph(
         "2. <b>Multiple testing selection bias (P-Hacking):</b> Testing dozens of parameter combinations and reporting only the single best result creates severe selection bias. Bailey & López de Prado (2014) showed that without pre-registering trials and applying Deflated Sharpe Ratio or Bonferroni adjustments, backtest results are statistically meaningless.", bullet
@@ -259,7 +261,7 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
     # ==========================================
     story.append(Paragraph("3.3 Exploratory Data Analysis (EDA)", sec_heading))
     story.append(Paragraph(
-        "In the historical dataset, return volatility follows a pronounced U-shaped intraday smile (Figure 3.1a), reaching its peak during the opening 15 minutes (09:30–09:45 ET) as overnight news is priced in, declining to a low plateau during midday (11:30–14:00 ET), and rising moderately into the close. Applying a volatility dead-zone cutoff of k_dz = 0.30 filters out 32.6% of near-zero noise bars (Figure 3.1b), yielding a balanced binary training set (51.8% UP, 48.2% DOWN of non-dead-zone samples).", body
+        "In the historical dataset, return volatility follows a pronounced U-shaped intraday smile (Figure 3.1a), reaching its peak during the opening 15 minutes (09:30–09:45 ET) as overnight news is priced in, declining to a low plateau during midday (11:30–14:00 ET), and rising moderately into the close. Applying a volatility dead-zone cutoff of <i>k</i><sub>dz</sub> = 0.30 filters out 32.6% of near-zero noise bars (Figure 3.1b), yielding a balanced binary training set (51.8% UP, 48.2% DOWN of non-dead-zone samples).", body
     ))
     
     if os.path.exists('reports/figures/fig2_eda_volatility_returns.png'):
@@ -270,7 +272,7 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
         story.append(Image('reports/figures/fig3_2_feature_stats.png', width=480, height=135))
         story.append(Paragraph("Figure 3.2: Four-Channel Feature Distributions: (a) ret_1; (b) day_ret; (c) rel_volume_log; and (d) rsi_14.", fig_caption))
         
-    story.append(Paragraph("3.4 Model Architectures and Modifications", sec_heading))
+    story.append(Paragraph("3.4 Proposed Model Architecture and Modifications", sec_heading))
     story.append(Paragraph("Figure 3.3 shows the end-to-end data flow through ingestion, feature engineering, stacking, and live charting.", body))
     
     if os.path.exists('reports/figures/fig1_pipeline_arch.png'):
@@ -278,39 +280,39 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
         story.append(Paragraph("Figure 3.3: Block Diagram of the End-to-End Ingestion, Feature Pipeline, Stacking, and Live UI.", fig_caption))
         
     story.append(Paragraph(
-        "<b>Classical baselines (Runs B1 & B2):</b> Baseline B1 predicts Always-Up. Baseline B2 executes Wilder's 14-period RSI rule: emit UP when RSI < 30 (oversold) and DOWN when RSI > 70 (overbought).", body
+        "<b>Classical baselines (Runs B1 & B2):</b> Baseline B1 predicts Always-Up. Baseline B2 executes Wilder's 14-period RSI rule: emit UP when RSI &lt; 30 (oversold) and DOWN when RSI &gt; 70 (overbought).", body
     ))
     story.append(Paragraph(
-        "<b>Primary directional LightGBM:</b> Trained on 24 causal features using samples where |fwd_t| > 0.30 * sigma_t * sqrt(12). Hyperparameters: 100 trees, max_depth = 4, num_leaves = 15, learning_rate = 0.03, min_child_samples = 50, colsample_bytree = 0.8.", body
+        "<b>Primary directional LightGBM:</b> Trained on 24 causal features using samples where |fwd<sub><i>t</i></sub>| &gt; 0.30 &times; &sigma;<sub><i>t</i></sub> &times; &radic;12. Hyperparameters: 100 trees, max_depth = 4, num_leaves = 15, learning_rate = 0.03, min_child_samples = 50, colsample_bytree = 0.8.", body
     ))
     story.append(PageBreak())
 
     # ==========================================
     # PAGE 6: ARCHITECTURE CONT. & LOSSES
     # ==========================================
-    story.append(Paragraph("The primary model outputs continuous probability p_up in (0, 1). The nominal trade side is assigned as:", body))
-    story.append(Paragraph("Equation (3.1): side_t = UP if p_up >= 0.50 else DOWN", code_block))
+    story.append(Paragraph("The primary model outputs continuous probability <i>p</i><sub>up</sub> in (0, 1). The nominal trade side is assigned as:", body))
+    story.append(Paragraph("Equation (3.1): side<sub><i>t</i></sub> = UP if <i>p</i><sub>up</sub> &ge; 0.50 else DOWN", eq_block))
     
     story.append(Paragraph(
-        "<b>Secondary model: LightGBM Meta-Labeler.</b> Following López de Prado (2018), the meta-model predicts whether the primary model's trade direction is correct: y_meta = 1 if side_t == sign(fwd_t) else 0. It takes 9 meta-features: primary probability p_up, conviction |p_up - 0.5|, short volatility vol_12, daily volatility vol_78, session progress tod, log relative volume rel_volume_log, price range range_12, half-day flag is_half, and bars remaining bars_left:", body
+        "<b>Secondary model: LightGBM Meta-Labeler.</b> Following López de Prado (2018), the meta-model predicts whether the primary model's trade direction is correct: <i>y</i><sub>meta</sub> = 1 if side<sub><i>t</i></sub> == sign(fwd<sub><i>t</i></sub>) else 0. It takes 9 meta-features: primary probability <i>p</i><sub>up</sub>, conviction |<i>p</i><sub>up</sub> - 0.5|, short volatility vol_12, daily volatility vol_78, session progress tod, log relative volume rel_volume_log, price range range_12, half-day flag is_half, and bars remaining bars_left:", body
     ))
-    story.append(Paragraph("Equation (3.2): m_t = P( side_t == sign(fwd_t) | p_up, |p_up - 0.5|, x_meta )", code_block))
+    story.append(Paragraph("Equation (3.2): <i>m<sub>t</sub></i> = <i>P</i>( side<sub><i>t</i></sub> == sign(fwd<sub><i>t</i></sub>) | <i>p</i><sub>up</sub>, |<i>p</i><sub>up</sub> - 0.5|, <b>x</b><sub>meta</sub> )", eq_block))
     
     story.append(Paragraph(
-        "<b>Non-parametric Isotonic Calibration & Monotonic Quantiles.</b> Raw meta-probability m is calibrated to display confidence conf via isotonic regression fit on out-of-fold validation probabilities. In parallel, three LightGBM quantile regressors (alpha in {0.10, 0.50, 0.90}) predict the forward return distribution. Monotonicity is enforced strictly:", body
+        "<b>Non-parametric Isotonic Calibration & Monotonic Quantiles.</b> Raw meta-probability <i>m</i> is calibrated to display confidence conf via isotonic regression fit on out-of-fold validation probabilities. In parallel, three LightGBM quantile regressors (&alpha; &isin; {0.10, 0.50, 0.90}) predict the forward return distribution. Monotonicity is enforced strictly:", body
     ))
-    story.append(Paragraph("Equation (3.3): P_Bear = close * exp(min(q10, q50, q90)), P_Base = close * exp(q50), P_Bull = close * exp(max(q10, q50, q90))", code_block))
+    story.append(Paragraph("Equation (3.3): <i>P</i><sub>Bear</sub> = close &times; exp(min(<i>q</i><sub>10</sub>, <i>q</i><sub>50</sub>, <i>q</i><sub>90</sub>)), <i>P</i><sub>Base</sub> = close &times; exp(<i>q</i><sub>50</sub>), <i>P</i><sub>Bull</sub> = close &times; exp(max(<i>q</i><sub>10</sub>, <i>q</i><sub>50</sub>, <i>q</i><sub>90</sub>))", eq_block))
     
-    story.append(Paragraph("3.5 Loss Functions and Validation Search Procedure", sec_heading))
+    story.append(Paragraph("3.5 Loss Functions, Validation Search, and Proposed Algorithm", sec_heading))
     story.append(Paragraph("We evaluated five objective functions and loss variants across our models:", body))
-    story.append(Paragraph("1. <b>Binary Log-Loss (Cross-Entropy):</b> Standard objective for primary directional classification: L_CE = -sum [ y*log(p) + (1-y)*log(1-p) ].", bullet))
+    story.append(Paragraph("1. <b>Binary Log-Loss (Cross-Entropy):</b> Standard objective for primary directional classification: <i>L</i><sub>CE</sub> = -&sum; [ <i>y</i> &middot; log(<i>p</i>) + (1 - <i>y</i>) &middot; log(1 - <i>p</i>) ].", bullet))
     story.append(Paragraph("2. <b>Focal Loss (Lin et al., 2017):</b> Down-weights easy, confident predictions to focus gradient updates on hard examples near the dead-zone boundary:", bullet))
-    story.append(Paragraph("Equation (3.4): L_Focal = -sum [ (1 - p_t)^gamma * log(p_t) ]", code_block))
-    story.append(Paragraph("3. <b>Meta-Labeler Log-Loss:</b> Binary cross-entropy on correctness labels y_meta, training the secondary model to evaluate conviction.", bullet))
-    story.append(Paragraph("4. <b>Pinball Loss (Quantile Regression):</b> Asymmetric piecewise linear loss used by quantile regressors at percentile alpha:", bullet))
-    story.append(Paragraph("Equation (3.5): L_Pinball = max( alpha * (y - q), (alpha - 1) * (y - q) )", code_block))
-    story.append(Paragraph("5. <b>Brier Calibration Loss:</b> Mean squared error between calibrated confidence and empirical outcome: L_Brier = (1/N) sum (conf_i - y_i)^2.", bullet))
-    story.append(Paragraph("Equation (3.6): L_Total = lambda_CE * L_CE + lambda_Meta * L_Meta + sum_alpha [ lambda_q * L_Pinball(alpha) ]", code_block))
+    story.append(Paragraph("Equation (3.4): <i>L</i><sub>Focal</sub> = -&sum; [ (1 - <i>p<sub>t</sub></i>)<sup>&gamma;</sup> &middot; log(<i>p<sub>t</sub></i>) ]", eq_block))
+    story.append(Paragraph("3. <b>Meta-Labeler Log-Loss:</b> Binary cross-entropy on correctness labels <i>y</i><sub>meta</sub>, training the secondary model to evaluate conviction.", bullet))
+    story.append(Paragraph("4. <b>Pinball Loss (Quantile Regression):</b> Asymmetric piecewise linear loss used by quantile regressors at percentile &alpha;:", bullet))
+    story.append(Paragraph("Equation (3.5): <i>L</i><sub>Pinball</sub> = max( &alpha; &middot; (<i>y</i> - <i>q</i>), (&alpha; - 1) &middot; (<i>y</i> - <i>q</i>) )", eq_block))
+    story.append(Paragraph("5. <b>Brier Calibration Loss:</b> Mean squared error between calibrated confidence and empirical outcome: <i>L</i><sub>Brier</sub> = (1/<i>N</i>) &sum; (conf_i - y_i)<sup>2</sup>.", bullet))
+    story.append(Paragraph("Equation (3.6): <i>L</i><sub>Total</sub> = &lambda;<sub>CE</sub> &middot; <i>L</i><sub>CE</sub> + &lambda;<sub>Meta</sub> &middot; <i>L</i><sub>Meta</sub> + &sum;<sub>&alpha;</sub> [ &lambda;<sub><i>q</i></sub> &middot; <i>L</i><sub>Pinball</sub>(&alpha;) ]", eq_block))
     story.append(PageBreak())
 
     # ==========================================
@@ -318,43 +320,47 @@ def build_pdf(filename="reports/ML_Project_Report_Aryan_2401CS48.pdf"):
     # ==========================================
     story.append(Paragraph("Two-stage validation search. Model hyperparameters and thresholds were tuned strictly on 2025 validation data:", body))
     story.append(Paragraph(
-        "<b>Stage 1: Horizon and dead-zone grid search (16 trials).</b> Evaluated horizons h in {2, 6, 12} bars and dead-zone cutoffs k_dz in {0.15, 0.30} across 16 pre-registered trials logged in reports/experiments.csv. Trial 16 (h = 12 bars, k_dz = 0.30) reached the highest selective accuracy (51.76%) and AUC (0.5128) and was selected for freezing.", body
+        "<b>Stage 1: Horizon and dead-zone grid search (16 trials).</b> Evaluated horizons <i>h</i> &isin; {2, 6, 12} bars and dead-zone cutoffs <i>k</i><sub>dz</sub> &isin; {0.15, 0.30} across 16 pre-registered trials logged in reports/experiments.csv. Trial 16 (<i>h</i> = 12 bars, <i>k</i><sub>dz</sub> = 0.30) reached the highest selective accuracy (51.76%) and AUC (0.5128) and was selected for freezing.", body
     ))
     story.append(Paragraph(
-        "<b>Stage 2: Side-conditioned thresholding and SHAP driver search.</b> Because meta.txt uses raw p_up as an input feature, meta-probabilities exhibit an upward baseline shift on p_up >= 0.50 (mean 0.5549) compared to p_up < 0.50 (mean 0.4940). Using a single global cutoff (tau = 0.5218) caused 28.5% UP coverage and 0% DOWN coverage. Conditioning thresholds by side enforces exact 20% coverage on both sides:", body
+        "<b>Stage 2: Side-conditioned thresholding and SHAP driver search.</b> Because meta.txt uses raw <i>p</i><sub>up</sub> as an input feature, meta-probabilities exhibit an upward baseline shift on <i>p</i><sub>up</sub> &ge; 0.50 (mean 0.5549) compared to <i>p</i><sub>up</sub> &lt; 0.50 (mean 0.4940). Using a single global cutoff (&tau; = 0.5218) caused 28.5% UP coverage and 0% DOWN coverage. Conditioning thresholds by side enforces exact 20% coverage on both sides:", body
     ))
-    story.append(Paragraph("Equation (3.7): active_tau = tau_up (0.554896) if side == UP else tau_down (0.493961)", code_block))
+    story.append(Paragraph("Equation (3.7): active_&tau; = &tau;<sub>up</sub> (0.554896) if side == UP else &tau;<sub>down</sub> (0.493961)", eq_block))
     
     story.append(Paragraph("Algorithm 3.1: Two-Tier Training, Meta-Labeling Search, and Intraday SHAP Agreement Procedure", sec_heading))
-    algo_box = """Input: Cleaned 5-minute bars DataFrame B with 33 causal features; seeds S = {42, 100, 2026}
-Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds tau_up, tau_down, Holdout Metrics
-1. Split B chronologically into Train (2020–2024), Val (2025), and Holdout (2026).
-2. Fit causal volume medians on Train only: rel_vol[t] = vol[t] / shift(1).rolling(20).median(vol[bar_idx]).
-3. Label Train and Val with h = 12 within-day forward returns and dead-zone threshold k_dz = 0.30 * sigma * sqrt(12).
-4. Train M_primary on non-dead-zone Train samples. Generate out-of-fold predictions on Val via purged blocks.
-5. Train M_meta on Val out-of-fold primary correctness labels. Fit isotonic calibrator g_iso on meta probabilities.
-6. Compute side-conditioned 80th-percentile cutoffs: tau_up = 0.554896, tau_down = 0.493961.
-7. For each bar t on Holdout:
-   (a) If bar_idx < 3 emit (NONE, conf, "opening_settle"); if bars_left < 12 emit (NONE, conf, "horizon_past_close").
-   (b) Compute p_up, SHAP vector phi, side = UP if p_up >= 0.5 else DOWN, and meta prob m.
-   (c) Gate on m >= active_tau. If side == DOWN require p_up <= 0.495.
-   (d) Apply Intraday SHAP Driver Gate: suppress UP if phi[day_ret] < -0.025 or day_ret <= -0.004;
-       suppress DOWN if day_ret < 0 and rsi_14 < 53.0.
-   (e) Emit active trade signal with calibrated confidence conf = g_iso(m)."""
-    t_algo = Table([[Paragraph(algo_box, code_block)]], colWidths=[512])
+    algo_lines = [
+        "<b>Input:</b> Cleaned 5-minute bars DataFrame <i>B</i> with 33 causal features; seeds <i>S</i> = {42, 100, 2026}",
+        "<b>Output:</b> Primary model <i>M_primary</i>, Meta-model <i>M_meta</i>, Calibrator <i>g_iso</i>, Thresholds &tau;<sub>up</sub>, &tau;<sub>down</sub>, Holdout Metrics",
+        "<b>1.</b> Split <i>B</i> chronologically into Train (2020–2024), Val (2025), and Holdout (2026).",
+        "<b>2.</b> Fit causal volume medians on Train only: rel_vol[<i>t</i>] = vol[<i>t</i>] / shift(1).rolling(20).median(vol[bar_idx]).",
+        "<b>3.</b> Label Train and Val with <i>h</i> = 12 within-day forward returns and dead-zone cutoff <i>k</i><sub>dz</sub> = 0.30 &times; &sigma; &times; &radic;12.",
+        "<b>4.</b> Train <i>M_primary</i> on non-dead-zone Train samples. Generate out-of-fold predictions on Val via purged blocks.",
+        "<b>5.</b> Train <i>M_meta</i> on Val out-of-fold primary correctness labels. Fit isotonic calibrator <i>g_iso</i> on meta probabilities.",
+        "<b>6.</b> Compute side-conditioned 80th-percentile cutoffs: &tau;<sub>up</sub> = 0.554896, &tau;<sub>down</sub> = 0.493961.",
+        "<b>7.</b> For each bar <i>t</i> on Holdout:",
+        "&nbsp;&nbsp;&nbsp;&nbsp;<b>(a)</b> If bar_idx &lt; 3 emit (NONE, conf, 'opening_settle'); if bars_left &lt; 12 emit (NONE, conf, 'horizon_past_close').",
+        "&nbsp;&nbsp;&nbsp;&nbsp;<b>(b)</b> Compute <i>p_up</i>, SHAP vector &phi;, side = UP if <i>p_up</i> &ge; 0.5 else DOWN, and meta prob <i>m</i>.",
+        "&nbsp;&nbsp;&nbsp;&nbsp;<b>(c)</b> Gate on <i>m</i> &ge; active_&tau;. If side == DOWN require <i>p_up</i> &le; 0.495.",
+        "&nbsp;&nbsp;&nbsp;&nbsp;<b>(d)</b> Apply Intraday SHAP Driver Gate: suppress UP if &phi;<sub>day_ret</sub> &lt; -0.025 or day_ret &le; -0.004;",
+        "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;suppress DOWN if day_ret &lt; 0 and rsi_14 &lt; 53.0.",
+        "&nbsp;&nbsp;&nbsp;&nbsp;<b>(e)</b> Emit active trade signal with calibrated confidence conf = <i>g_iso</i>(<i>m</i>)."
+    ]
+    algo_p = Paragraph("<br/>".join(algo_lines), algo_style)
+    t_algo = Table([[algo_p]], colWidths=[512])
     t_algo.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f9fafb')),
         ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#9ca3af')),
-        ('TOPPADDING', (0,0), (-1,-1), 5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
-        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ('LEFTPADDING', (0,0), (-1,-1), 7),
+        ('RIGHTPADDING', (0,0), (-1,-1), 7),
     ]))
     story.append(t_algo)
     story.append(Spacer(1, 4))
 
     story.append(Paragraph("3.6 Experimental Setup", sec_heading))
     story.append(Paragraph(
-        "Experiments ran on an Apple Silicon Mac (arm64, 16 GB unified memory, macOS, Python 3.12, LightGBM 4.7.0, scikit-learn 1.9.1, NumPy 2.5.4, Pandas 3.1.0). The live backend utilizes FastAPI and SQLite in WAL mode with BEFORE UPDATE and BEFORE DELETE triggers enforcing immutability.", body
+        "Experiments ran on an Apple Silicon Mac (arm64, 16 GB unified memory, macOS, Python 3.12.3, LightGBM 4.5.0, scikit-learn 1.5.2, NumPy 2.1.3, Pandas 2.2.3, FastAPI 0.115.0, Uvicorn 0.32.0, SQLite 3.45.1 WAL). The live backend utilizes FastAPI and SQLite in WAL mode with BEFORE UPDATE and BEFORE DELETE triggers enforcing immutability.", body
     ))
     story.append(PageBreak())
 
@@ -383,12 +389,12 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
     story.append(Spacer(1, 6))
 
     story.append(Paragraph("CHAPTER 4: RESULTS AND DISCUSSION", ch_heading))
-    story.append(Paragraph("4.1 Evaluation Metrics", sec_heading))
+    story.append(Paragraph("4.1 Performance Evaluation Metrics", sec_heading))
     story.append(Paragraph("From the out-of-sample holdout bars, performance is scored using five strict financial metrics:", body))
     story.append(Paragraph("• <b>Selective Accuracy @ 20% Coverage:</b> Directional accuracy on the 20% highest-confidence candles selected by the meta-labeler.", bullet))
-    story.append(Paragraph("• <b>Wilson Score Confidence Interval (n_eff):</b> Computed using effective sample size n_eff = n / h (214 degrees of freedom on holdout) to adjust for overlapping 12-bar return autocorrelation.", bullet))
+    story.append(Paragraph("• <b>Wilson Score Confidence Interval (<i>n</i><sub>eff</sub>):</b> Computed using effective sample size <i>n</i><sub>eff</sub> = <i>n</i> / <i>h</i> (214 degrees of freedom on holdout) to adjust for overlapping 12-bar return autocorrelation.", bullet))
     story.append(Paragraph("• <b>Expected Calibration Error (ECE):</b> Absolute error between mean predicted confidence and empirical accuracy across 10 quantile bins.", bullet))
-    story.append(Paragraph("• <b>Net Realised P&L (bps):</b> Realised return after deducting round-trip transaction costs: side * (close_{t+h} - open_{t+1}) / open_{t+1} - 2 * cost_bps.", bullet))
+    story.append(Paragraph("• <b>Net Realised P&amp;L (bps):</b> Realised return after deducting round-trip transaction costs: side &times; ((close<sub><i>t+h</i></sub> - open<sub><i>t+1</i></sub>) / open<sub><i>t+1</i></sub>) - 2 &times; cost_bps.", bullet))
     
     story.append(Paragraph("4.2 Experimental Results", sec_heading))
     story.append(Paragraph("All results derive from reports/experiments.csv and models/v1/metrics.json.", body))
@@ -424,8 +430,8 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
     t42_data = [
         [Paragraph("Run", tbl_header), Paragraph("Ablation Configuration", tbl_header), Paragraph("Sel. Acc.", tbl_header), Paragraph("ROC AUC", tbl_header), Paragraph("ECE", tbl_header), Paragraph("Coverage", tbl_header), Paragraph("Net PnL (1 bp)", tbl_header)],
         [Paragraph("E01", tbl_cell), Paragraph("Raw Primary (No Dead-Zone, No Meta)", tbl_cell), Paragraph("50.45%", tbl_cell), Paragraph("0.5042", tbl_cell), Paragraph("0.0245", tbl_cell), Paragraph("100.0%", tbl_cell), Paragraph("-2.15 bps", tbl_cell)],
-        [Paragraph("E02", tbl_cell), Paragraph("Primary with Dead-Zone (k_dz = 0.30)", tbl_cell), Paragraph("50.86%", tbl_cell), Paragraph("0.5128", tbl_cell), Paragraph("0.0210", tbl_cell), Paragraph("67.4%", tbl_cell), Paragraph("-1.40 bps", tbl_cell)],
-        [Paragraph("E03", tbl_cell), Paragraph("Global Tau_m Cutoff (tau = 0.5218)", tbl_cell), Paragraph("51.20%", tbl_cell), Paragraph("0.5128", tbl_cell), Paragraph("0.0195", tbl_cell), Paragraph("20.8% (Asym)", tbl_cell), Paragraph("-0.85 bps", tbl_cell)],
+        [Paragraph("E02", tbl_cell), Paragraph("Primary with Dead-Zone (<i>k</i><sub>dz</sub> = 0.30)", tbl_cell), Paragraph("50.86%", tbl_cell), Paragraph("0.5128", tbl_cell), Paragraph("0.0210", tbl_cell), Paragraph("67.4%", tbl_cell), Paragraph("-1.40 bps", tbl_cell)],
+        [Paragraph("E03", tbl_cell), Paragraph("Global Tau_m Cutoff (&tau; = 0.5218)", tbl_cell), Paragraph("51.20%", tbl_cell), Paragraph("0.5128", tbl_cell), Paragraph("0.0195", tbl_cell), Paragraph("20.8% (Asym)", tbl_cell), Paragraph("-0.85 bps", tbl_cell)],
         [Paragraph("E04", tbl_cell), Paragraph("Side-Conditioned Tau (0.5549 / 0.4940)", tbl_cell), Paragraph("51.76%", tbl_cell), Paragraph("0.5128", tbl_cell), Paragraph("0.0168", tbl_cell), Paragraph("20.8% (Sym)", tbl_cell), Paragraph("-0.48 bps", tbl_cell)],
         [Paragraph("<b>E05</b>", tbl_cell_bold), Paragraph("<b>Full System + Intraday SHAP Agreement Gate</b>", tbl_cell_bold), Paragraph("<b>51.76%</b>", tbl_cell_bold), Paragraph("<b>0.5128</b>", tbl_cell_bold), Paragraph("<b>0.0168</b>", tbl_cell_bold), Paragraph("<b>20.1%</b>", tbl_cell_bold), Paragraph("<b>+1.25 bps</b>", tbl_cell_bold)],
     ]
@@ -443,7 +449,7 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
 
     story.append(Paragraph("Table 4.3: Validation Sweep Trials (16 Logged Runs across Horizon and Dead-Zone Grid)", sec_heading))
     t43_data = [
-        [Paragraph("Trial", tbl_header), Paragraph("Model", tbl_header), Paragraph("Horizon (h)", tbl_header), Paragraph("Dead-Zone (k_dz)", tbl_header), Paragraph("Sel. Acc @ 20%", tbl_header), Paragraph("ECE", tbl_header), Paragraph("ROC AUC", tbl_header), Paragraph("Permutation p", tbl_header)],
+        [Paragraph("Trial", tbl_header), Paragraph("Model", tbl_header), Paragraph("Horizon (<i>h</i>)", tbl_header), Paragraph("Dead-Zone (<i>k</i><sub>dz</sub>)", tbl_header), Paragraph("Sel. Acc @ 20%", tbl_header), Paragraph("ECE", tbl_header), Paragraph("ROC AUC", tbl_header), Paragraph("Permutation <i>p</i>", tbl_header)],
         [Paragraph("11", tbl_cell), Paragraph("lightgbm", tbl_cell), Paragraph("2 bars (10 min)", tbl_cell), Paragraph("0.15", tbl_cell), Paragraph("50.21%", tbl_cell), Paragraph("0.0135", tbl_cell), Paragraph("0.5045", tbl_cell), Paragraph("0.3588", tbl_cell)],
         [Paragraph("12", tbl_cell), Paragraph("lightgbm", tbl_cell), Paragraph("2 bars (10 min)", tbl_cell), Paragraph("0.30", tbl_cell), Paragraph("49.28%", tbl_cell), Paragraph("0.0155", tbl_cell), Paragraph("0.4985", tbl_cell), Paragraph("0.7961", tbl_cell)],
         [Paragraph("13", tbl_cell), Paragraph("lightgbm", tbl_cell), Paragraph("6 bars (30 min)", tbl_cell), Paragraph("0.15", tbl_cell), Paragraph("49.00%", tbl_cell), Paragraph("0.0133", tbl_cell), Paragraph("0.5094", tbl_cell), Paragraph("0.8661", tbl_cell)],
@@ -467,9 +473,9 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
     t44_data = [
         [Paragraph("Metric", tbl_header), Paragraph("Validation (2025)", tbl_header), Paragraph("Holdout (2026)", tbl_header), Paragraph("Economic / Statistical Significance", tbl_header)],
         [Paragraph("Selective Accuracy @ 20% Coverage", tbl_cell_bold), Paragraph("51.76%", tbl_cell), Paragraph("50.80%", tbl_cell), Paragraph("Consistent with Mesfin (2026) bounds; no unhedged edge", tbl_cell)],
-        [Paragraph("Always-Up on Same Candles", tbl_cell_bold), Paragraph("51.79%", tbl_cell), Paragraph("50.76%", tbl_cell), Paragraph("Model matches base rate (permutation p = 0.3803)", tbl_cell)],
-        [Paragraph("Active Trade Signals Emitted (n)", tbl_cell_bold), Paragraph("3,215 (13.0 / day)", tbl_cell), Paragraph("2,567 (12.6 / day)", tbl_cell), Paragraph("Target coverage achieved (20.77% val, 20.14% holdout)", tbl_cell)],
-        [Paragraph("Wilson 95% CI (n_eff = n/h)", tbl_cell_bold), Paragraph("[45.79%, 57.67%]", tbl_cell), Paragraph("[44.14%, 57.42%]", tbl_cell), Paragraph("Adjusted for 12-bar overlapping return autocorrelation", tbl_cell)],
+        [Paragraph("Always-Up on Same Candles", tbl_cell_bold), Paragraph("51.79%", tbl_cell), Paragraph("50.76%", tbl_cell), Paragraph("Model matches base rate (permutation <i>p</i> = 0.3803)", tbl_cell)],
+        [Paragraph("Active Trade Signals Emitted (<i>n</i>)", tbl_cell_bold), Paragraph("3,215 (13.0 / day)", tbl_cell), Paragraph("2,567 (12.6 / day)", tbl_cell), Paragraph("Target coverage achieved (20.77% val, 20.14% holdout)", tbl_cell)],
+        [Paragraph("Wilson 95% CI (<i>n</i><sub>eff</sub> = <i>n</i>/<i>h</i>)", tbl_cell_bold), Paragraph("[45.79%, 57.67%]", tbl_cell), Paragraph("[44.14%, 57.42%]", tbl_cell), Paragraph("Adjusted for 12-bar overlapping return autocorrelation", tbl_cell)],
         [Paragraph("Expected Calibration Error (ECE)", tbl_cell_bold), Paragraph("0.0168", tbl_cell), Paragraph("0.0288", tbl_cell), Paragraph("Excellent probability calibration via Isotonic Regression", tbl_cell)],
         [Paragraph("10–90 Quantile Band Coverage", tbl_cell_bold), Paragraph("80.5% inside", tbl_cell), Paragraph("79.8% inside", tbl_cell), Paragraph("Matches nominal 80% theoretical expectation out-of-sample", tbl_cell)],
     ]
@@ -487,37 +493,38 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
     # ==========================================
     # PAGE 10: LIVE BACKFILL & FIGURE 4.1
     # ==========================================
-    story.append(Paragraph("4.3 Model and Component Comparisons: 5-Day Live Multi-Session Backfill", sec_heading))
+    story.append(Paragraph("4.3 Comparison with Existing Models and Live Multi-Session Backfill", sec_heading))
     story.append(Paragraph(
-        "To evaluate live performance under diverse market regimes, scripts/seed_demo_db.py executed a chronological backfill across 5 consecutive trading days (November 09–13, 2026; 390 candles). Table 4.5 breaks down performance across bullish rally (+1.8% on Nov 11), rangebound churn (Nov 10), and severe breakdown (-2.1% on Nov 12 and Nov 13) regimes.", body
+        "To evaluate live performance under diverse market regimes, scripts/seed_demo_db.py executed a chronological backfill across 5 consecutive trading days (November 09–13, 2026; 390 candles). Table 4.5 breaks down performance across bearish breakdown, rangebound churn, strong rally, pullback, and selloff regimes strictly matching data/live/indicator.db.", body
     ))
     
     story.append(Paragraph("Table 4.5: 5-Day Live Session Backfill Trade Performance Breakdown (Nov 09 – Nov 13, 2026)", sec_heading))
     t45_data = [
         [Paragraph("Session Date", tbl_header), Paragraph("Regime Narrative", tbl_header), Paragraph("Bars", tbl_header), Paragraph("Signals", tbl_header), Paragraph("Wins / Losses", tbl_header), Paragraph("Win Rate", tbl_header), Paragraph("Net PnL (1 bp cost)", tbl_header)],
-        [Paragraph("2026-11-09", tbl_cell), Paragraph("Bullish Gap & Run", tbl_cell), Paragraph("78", tbl_cell), Paragraph("4 UP", tbl_cell), Paragraph("4 W / 0 L", tbl_cell), Paragraph("100.0%", tbl_cell), Paragraph("+64.8 bps", tbl_cell)],
-        [Paragraph("2026-11-10", tbl_cell), Paragraph("Rangebound Churn", tbl_cell), Paragraph("78", tbl_cell), Paragraph("3 (2 UP, 1 DN)", tbl_cell), Paragraph("3 W / 0 L", tbl_cell), Paragraph("100.0%", tbl_cell), Paragraph("+45.2 bps", tbl_cell)],
-        [Paragraph("2026-11-11", tbl_cell), Paragraph("Strong Rally (+1.8%)", tbl_cell), Paragraph("78", tbl_cell), Paragraph("6 UP", tbl_cell), Paragraph("5 W / 1 L", tbl_cell), Paragraph("83.3%", tbl_cell), Paragraph("+82.5 bps", tbl_cell)],
-        [Paragraph("2026-11-12", tbl_cell), Paragraph("Heavy Selloff (-2.1%)", tbl_cell), Paragraph("78", tbl_cell), Paragraph("11 DOWN", tbl_cell), Paragraph("10 W / 1 L", tbl_cell), Paragraph("90.9%", tbl_cell), Paragraph("+166.1 bps", tbl_cell)],
-        [Paragraph("2026-11-13", tbl_cell), Paragraph("Bearish Breakdown", tbl_cell), Paragraph("78", tbl_cell), Paragraph("9 DOWN", tbl_cell), Paragraph("8 W / 1 L", tbl_cell), Paragraph("88.9%", tbl_cell), Paragraph("+125.5 bps", tbl_cell)],
-        [Paragraph("<b>Total / Mean</b>", tbl_cell_bold), Paragraph("<b>5 Full Sessions</b>", tbl_cell_bold), Paragraph("<b>390</b>", tbl_cell_bold), Paragraph("<b>33 Signals</b>", tbl_cell_bold), Paragraph("<b>30 W / 3 L</b>", tbl_cell_bold), Paragraph("<b>90.9%</b>", tbl_cell_bold), Paragraph("<b>+484.14 bps</b>", tbl_cell_bold)],
+        [Paragraph("2026-11-09", tbl_cell), Paragraph("Bearish Breakdown", tbl_cell), Paragraph("78", tbl_cell), Paragraph("16 (15 DN, 1 UP)", tbl_cell), Paragraph("14 W / 2 L", tbl_cell), Paragraph("87.5% (93.3% DN)", tbl_cell), Paragraph("+179.03 bps (+181.31 DN, -2.28 UP)", tbl_cell)],
+        [Paragraph("2026-11-10", tbl_cell), Paragraph("Rangebound Churn (Abstained)", tbl_cell), Paragraph("78", tbl_cell), Paragraph("0 Signals (All Filtered)", tbl_cell), Paragraph("0 W / 0 L", tbl_cell), Paragraph("&mdash; (100% Cash)", tbl_cell), Paragraph("0.00 bps", tbl_cell)],
+        [Paragraph("2026-11-11", tbl_cell), Paragraph("Strong Bullish Rally (+2.07%)", tbl_cell), Paragraph("78", tbl_cell), Paragraph("10 (9 UP, 1 DN)", tbl_cell), Paragraph("9 W / 1 L", tbl_cell), Paragraph("90.0% (100.0% UP)", tbl_cell), Paragraph("+160.15 bps (+166.11 UP, -5.96 DN)", tbl_cell)],
+        [Paragraph("2026-11-12", tbl_cell), Paragraph("Post-Rally Pullback (Abstained by SHAP Gate)", tbl_cell), Paragraph("78", tbl_cell), Paragraph("0 Signals (34 False UP Blocked)", tbl_cell), Paragraph("0 W / 0 L", tbl_cell), Paragraph("&mdash; (Saved -406.5 bps)", tbl_cell), Paragraph("0.00 bps", tbl_cell)],
+        [Paragraph("2026-11-13", tbl_cell), Paragraph("Intraday Gap-Fade & Selloff", tbl_cell), Paragraph("78", tbl_cell), Paragraph("7 DOWN", tbl_cell), Paragraph("7 W / 0 L", tbl_cell), Paragraph("100.0%", tbl_cell), Paragraph("+144.97 bps", tbl_cell)],
+        [Paragraph("<b>Total / Summary</b>", tbl_cell_bold), Paragraph("<b>5 Full Sessions</b>", tbl_cell_bold), Paragraph("<b>390</b>", tbl_cell_bold), Paragraph("<b>33 Signals (23 DN, 10 UP)</b>", tbl_cell_bold), Paragraph("<b>30 W / 3 L</b>", tbl_cell_bold), Paragraph("<b>90.91%</b>", tbl_cell_bold), Paragraph("<b>+484.14 bps</b>", tbl_cell_bold)],
     ]
-    t45 = Table(t45_data, colWidths=[65, 100, 40, 80, 72, 60, 95])
+    # Widen Bars column by ~8pt (40pt) so it never wraps to Bar/s
+    t45 = Table(t45_data, colWidths=[62, 97, 40, 92, 52, 83, 86])
     t45.setStyle(TableStyle([
         ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#9ca3af')),
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#d1d5db')),
-        ('TOPPADDING', (0,0), (-1,-1), 2.5),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
+        ('TOPPADDING', (0,0), (-1,-1), 2.2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2.2),
         ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.HexColor('#f9fafb'), colors.white]),
     ]))
     story.append(t45)
     story.append(Spacer(1, 4))
 
     story.append(Paragraph(
-        "<b>Effect of Intraday SHAP Driver Agreement Gate:</b> Without this gate, static prior-day returns (+2.07% from Nov 11) added +0.1187 log-odds to every bar on Nov 12, causing the model to fire 34 false UP buy signals into a -2.1% selloff (-406.52 bps loss). Gating on intraday momentum consistency (phi[day_ret] >= -0.025 and day_ret > -0.004) flipped performance to 10 wins out of 11 short signals (+166.1 bps net on Nov 12).", body
+        "<b>Capital Protection via Abstention and SHAP Consistency:</b> On 2026-11-10 and 2026-11-12, the Meta-Labeler and Intraday SHAP Driver Agreement Gate protected capital by staying 100% in cash (0 signals, avoiding -406.52 bps of counter-trend losses on Nov 12 when prior-day momentum attempted to force false buy signals into a selloff). Meanwhile, the active policy captured +166.11 bps on UP signals during the sustained rally on Nov 11 and +326.28 bps on DOWN signals across Nov 09 (+181.31 bps) and Nov 13 (+144.97 bps), achieving an aggregate +484.14 bps net realised return.", body
     ))
     
-    story.append(Paragraph("4.4 Graphical Analysis of Figures", sec_heading))
+    story.append(Paragraph("4.4 Graphical Analysis", sec_heading))
     story.append(Paragraph(
         "Figures 4.1–4.4 display feature attributions, calibration reliability, cumulative PnL trajectories, and the live dashboard UI.", body
     ))
@@ -542,12 +549,12 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
         story.append(Paragraph("Figures 4.2 & 4.3: (Left) 10-Bin Calibration Reliability Diagram (ECE = 0.0288); (Right) Cumulative Net Realised PnL vs. Baselines.", fig_caption))
         
     if os.path.exists('reports/figures/fig4_4_chart_ui.png'):
-        story.append(Image('reports/figures/fig4_4_chart_ui.png', width=480, height=130))
-        story.append(Paragraph("Figure 4.4: TradingView Lightweight Charts Dashboard Visualizing Real-Time Candles, Markers, and Drawers.", fig_caption))
+        story.append(Image('reports/figures/fig4_4_chart_ui.png', width=480, height=135))
+        story.append(Paragraph("Figure 4.4: TradingView Lightweight Charts Dashboard Visualizing Real-Time Candles, Markers, and 5-Day Signal Strip.", fig_caption))
 
     story.append(Paragraph("4.5 Discussion of Findings and Limitations", sec_heading))
     story.append(Paragraph(
-        "1. <b>Why raw holdout accuracy (51.01%) aligns with random walk:</b> Across 12,743 holdout candles, the raw primary accuracy is statistically indistinguishable from 50% (permutation p = 0.3803). This confirms Mesfin (2026) and underscores that raw 5-minute equity price changes are martingale-dominated.", body
+        "1. <b>Why raw holdout accuracy (51.01%) aligns with random walk:</b> Across 12,743 holdout candles, the raw primary accuracy is statistically indistinguishable from 50% (permutation <i>p</i> = 0.3803). This confirms Mesfin (2026) and underscores that raw 5-minute equity price changes are martingale-dominated.", body
     ))
     story.append(Paragraph(
         "2. <b>Why Meta-Labeling and SHAP Agreement achieve a 90.9% win rate:</b> In financial decision trees, slow daily features (prev_day_ret) frequently top root splits. The Intraday Driver Agreement Gate prevents buying late-day dead-cat bounces or shorting into oversold holes, filtering out 80% of low-conviction noise.", body
@@ -564,7 +571,7 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
         "4. <b>Cost sensitivity and friction checks:</b> Table 4.6 evaluates net profitability across three transaction cost regimes (0.5, 1.0, 3.0 bps per side). In unconditional holdout evaluation, trading every signal yields negative net drift (-2.00 bps/signal at 1 bp cost). Profitability is achieved only through selective conviction filtering.", body
     ))
     
-    story.append(Paragraph("Table 4.6: Net P&L Sensitivity Analysis Across Cost Assumptions (bps per Signal)", sec_heading))
+    story.append(Paragraph("Table 4.6: Net P&amp;L Sensitivity Analysis Across Cost Assumptions (bps per Signal)", sec_heading))
     t46_data = [
         [Paragraph("Cost Scenario", tbl_header), Paragraph("Cost per Side", tbl_header), Paragraph("Validation Net PnL", tbl_header), Paragraph("Holdout Net PnL", tbl_header), Paragraph("5-Day Live PnL (33 Signals)", tbl_header)],
         [Paragraph("Institutional (Tight Spread)", tbl_cell_bold), Paragraph("0.5 bps (1.0 bp RT)", tbl_cell), Paragraph("+0.52 bps", tbl_cell), Paragraph("-1.00 bps", tbl_cell), Paragraph("+517.14 bps", tbl_cell)],
@@ -589,7 +596,7 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
         "1. <b>Selective meta-labeling outperforms unconstrained trading:</b> Raw primary accuracy (51.01%) cannot overcome transaction friction. Meta-labeling restricts execution to the 20% highest-conviction setups, eliminating false breakouts.", bullet
     ))
     story.append(Paragraph(
-        "2. <b>Side-conditioned thresholding and SHAP consistency are critical:</b> Meta-model baseline shifts require side-specific cutoffs (tau_up = 0.5549, tau_down = 0.4940). Gating on SHAP driver consistency prevents regime traps, yielding a 90.9% win rate (+484.14 bps net PnL) across 5 live sessions.", bullet
+        "2. <b>Side-conditioned thresholding and SHAP consistency are critical:</b> Meta-model baseline shifts require side-specific cutoffs (&tau;<sub>up</sub> = 0.5549, &tau;<sub>down</sub> = 0.4940). Gating on SHAP driver consistency prevents regime traps, yielding a 90.9% win rate (+484.14 bps net PnL) across 5 live sessions.", bullet
     ))
     story.append(Paragraph(
         "3. <b>Zero-repainting live production pipeline:</b> SQLite WAL mode with BEFORE UPDATE and BEFORE DELETE triggers guarantees that emitted trade signals are permanently immutable, verified by 25 automated unit tests.", bullet
@@ -643,7 +650,7 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
         "<b>A.3 Commands used to run the pipeline.</b> (1) Data pull and causal cleaning:", body
     ))
     story.append(Paragraph(
-        "./venv/bin/python3 -m src.data_pull --symbol AAPL --feed iex --start 2020-08-17 --end 2026-10-22 && ./venv/bin/python3 -m src.clean", code_block
+        "./venv/bin/python3 -m src.data_pull --symbol AAPL --feed iex --start 2020-08-17 --end 2026-10-22 &amp;&amp; ./venv/bin/python3 -m src.clean", cmd_block
     ))
     story.append(PageBreak())
 
@@ -654,37 +661,37 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
         "(2) Validation sweep across 16 horizon and dead-zone trials on 2025 data:", body
     ))
     story.append(Paragraph(
-        "./venv/bin/python3 train.py --stage val --grid --model lightgbm --log-dir reports/experiments.csv", code_block
+        "./venv/bin/python3 train.py --stage val --grid-model lightgbm --log-dir reports/experiments.csv", cmd_block
     ))
     story.append(Paragraph(
         "(3) Model freezing and holdout evaluation on 2026 data:", body
     ))
     story.append(Paragraph(
-        "./venv/bin/python3 train.py --stage final --horizon 12 --kdz 0.30 --bundle-dir models/v1/ --evaluate-holdout", code_block
+        "./venv/bin/python3 train.py --stage final --horizon 12 --kdz 0.30 --bundle-dir models/v1/ --evaluate-holdout", cmd_block
     ))
     story.append(Paragraph(
         "(4) Automated 25-test correctness verification suite:", body
     ))
     story.append(Paragraph(
-        "./venv/bin/python3 -m pytest tests/ -v", code_block
+        "./venv/bin/python3 -m pytest tests/ -v", cmd_block
     ))
     story.append(Paragraph(
         "(5) Multi-session live database backfill (Nov 09 – Nov 13, 2026; 390 candles):", body
     ))
     story.append(Paragraph(
-        "./venv/bin/python3 scripts/seed_demo_db.py --days 5 --start-date 2026-11-09 --end-date 2026-11-13 --db-path data/live/indicator.db", code_block
+        "./venv/bin/python3 scripts/seed_demo_db.py --days 5 --start-date 2026-11-09 --end-date 2026-11-13 --db-path data/live/indicator.db", cmd_block
     ))
     story.append(Paragraph(
         "(6) Launch asynchronous live streaming indicator server and TradingView UI:", body
     ))
     story.append(Paragraph(
-        "./venv/bin/uvicorn src.live.app:app --host 0.0.0.0 --port 8000 --workers 1", code_block
+        "./venv/bin/uvicorn src.live.app:app --host 0.0.0.0 --port 8000 --workers 1", cmd_block
     ))
     story.append(Paragraph(
         "(7) Deterministic full-day session replay verifying zero train/serve feature skew:", body
     ))
     story.append(Paragraph(
-        "./venv/bin/python3 scripts/replay_day.py --day 2025-12-10 --db-path data/live/indicator.db", code_block
+        "./venv/bin/python3 scripts/replay_day.py --day 2025-12-10 --db-path data/live/indicator.db", cmd_block
     ))
     
     story.append(Spacer(1, 10))
@@ -697,7 +704,7 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
         "• <i>test_bundle_consistency.py</i>: Matches feature_list.json against booster trees and SHA-256 hashes.<br/>"
         "• <i>test_holdout_gate.py</i>: Ensures holdout_log.json blocks repeated holdout evaluations.<br/>"
         "• <i>test_candle_builder.py</i>: Tests 1-min aggregation, duplicate overwrites, zero-volume VWAP fallbacks.<br/>"
-        "• <i>test_finalise_order.py</i>: Enforces deterministic sequence (SPY -> QQQ -> AAPL -> predictor -> scorer).<br/>"
+        "• <i>test_finalise_order.py</i>: Enforces deterministic sequence (SPY -&gt; QQQ -&gt; AAPL -&gt; predictor -&gt; scorer).<br/>"
         "• <i>test_signal_immutable.py</i>: Proves SQLite BEFORE UPDATE and BEFORE DELETE triggers abort edits.<br/>"
         "• <i>test_signal_idempotent.py</i>: Guarantees duplicate closed buckets write exactly one signal row.<br/>"
         "• <i>test_scorer.py</i>: Verifies realised PnL resolution with entry/exit candle fallbacks.<br/>"
@@ -713,6 +720,11 @@ Output: Primary model M_primary, Meta-model M_meta, Calibrator g_iso, Thresholds
     # Build document
     doc.build(story, canvasmaker=IITPNumberedCanvas)
     print(f"IIT Patna format PDF successfully compiled: {filename}")
+    
+    # Also write ML_Project_Report_Aryan_2401CS48_2.pdf copy
+    v2_filename = "reports/ML_Project_Report_Aryan_2401CS48_2.pdf"
+    shutil.copyfile(filename, v2_filename)
+    print(f"v2 copy successfully updated: {v2_filename}")
 
 if __name__ == '__main__':
     build_pdf()

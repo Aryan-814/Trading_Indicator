@@ -145,38 +145,38 @@ Labels are computed in `src/labels.py`.
 
 **Forward return** (strictly within-day):
 
-$$
+```math
 \text{fwd}_t = \log\!\left(\frac{\text{close}_{t+h}}{\text{close}_t}\right)
-$$
+```
 
 Computed via `groupby("day")["close"].shift(-h)` so it **never crosses the overnight boundary** (`NaN` when `bars_left < h`).
 
 **Volatility scale**:
 
-$$
+```math
 s_t = \sigma_t \cdot \sqrt{h}
-$$
+```
 
 where $\sigma_t$ is the causal EWM std of `ret_1` (`span=78`, `min_periods=30`).
 
 **Dead-zone primary label**:
 
-$$
+```math
 y_t = \begin{cases}
-+1 & \text{if } \text{fwd}_t > k_{dz} \cdot s_t \\\\
--1 & \text{if } \text{fwd}_t < -k_{dz} \cdot s_t \\\\
-0  & \text{otherwise (dead zone)} \\\\
++1 & \text{if } \text{fwd}_t > k_{dz} \cdot s_t \\
+-1 & \text{if } \text{fwd}_t < -k_{dz} \cdot s_t \\
+0  & \text{otherwise (dead zone)} \\
 \text{NaN} & \text{if } \text{bars left}_t < h \text{ or warm-up}
 \end{cases}
-$$
+```
 
 At the production setting ($h = 12$, $k_{dz} = 0.30$), 32.6% of valid rows fall in the dead zone and 51.8% of non-dead-zone rows are UP. Only $y \in \{-1, +1\}$ rows enter primary classifier training.
 
 **Scoring label**:
 
-$$
+```math
 y^{\text{sign}}_t = \text{sign}(\text{fwd}_t), \quad \text{NaN if } \text{fwd}_t = 0 \text{ or } \text{bars left}_t < h
-$$
+```
 
 ---
 
@@ -234,9 +234,9 @@ Raw meta-probabilities `m` are mapped to display confidence `conf` via `sklearn.
 
 Three LightGBM quantile regressors (`objective="quantile"`, $\alpha \in \{0.10, 0.50, 0.90\}$) predict the forward log-return distribution over $h$ bars. Outputs are sorted to guarantee monotonicity (`Bear <= Base <= Bull`) and converted to price targets:
 
-$$
+```math
 P^{\text{Bear}} = \text{close} \cdot e^{q_{10}}, \quad P^{\text{Base}} = \text{close} \cdot e^{q_{50}}, \quad P^{\text{Bull}} = \text{close} \cdot e^{q_{90}}
-$$
+```
 
 ---
 
