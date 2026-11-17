@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AAPL Intraday Daylight Quant Dashboard | AAPL AI Trading Indicator</title>
+  <title>AAPL Intraday Quant Dashboard | AAPL AI Trading Indicator</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
-  <!-- Pinned Lightweight Charts v4.2.0 per Section 14.2 -->
+  <link rel="stylesheet" href="style.css?v=5">
+  <!-- Pinned Lightweight Charts v4.2.0 -->
   <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 </head>
 <body class="blue-orange-theme">
@@ -42,7 +42,9 @@
         </select>
       </div>
       <div class="control-group">
-        <button id="theme-toggle" class="btn btn-theme" title="Toggle Daylight/Dark Mode"><span class="theme-icon">☀️</span> <span class="theme-text">Daylight</span></button>
+        <button id="theme-toggle" class="btn btn-theme" title="Toggle Daylight/Dark Mode">
+          <span class="theme-text">Daylight</span>
+        </button>
       </div>
     </div>
   </header>
@@ -54,203 +56,318 @@
 
   <!-- Main Container -->
   <main class="main-layout">
-    <!-- Left Column: Chart & Strip -->
+    <!-- Left Column: Chart, Fan, Strip & Historical Log -->
     <section class="chart-section">
       <div class="chart-header">
         <div class="chart-title">
           <span>AAPL 5-Minute Intraday</span>
           <span class="chart-sub" id="chart-candle-time">Latest: --:--</span>
         </div>
+        <div class="chart-controls-box">
+          <button id="btn-toggle-fan" class="btn btn-sm btn-fan active" title="Toggle 60-Minute Forward Quantile Fan">
+            <span>Quantile Fan</span>
+          </button>
+          <button id="btn-reset-zoom" class="btn btn-sm btn-reset" title="Reset View to Latest Bars">
+            <span>Reset View</span>
+          </button>
+        </div>
         <div class="chart-legend">
-          <span class="legend-item"><span class="legend-dot up"></span> Up Signal</span>
-          <span class="legend-item"><span class="legend-dot down"></span> Down Signal</span>
-          <span class="legend-item"><span class="legend-dot none"></span> No Signal</span>
+          <span class="legend-item"><span class="legend-dot bull"></span> Bull (Q90)</span>
+          <span class="legend-item"><span class="legend-dot base"></span> Base (Q50)</span>
+          <span class="legend-item"><span class="legend-dot bear"></span> Bear (Q10)</span>
+          <span class="legend-item"><span class="legend-dot up"></span> UP Signal</span>
+          <span class="legend-item"><span class="legend-dot down"></span> DOWN Signal</span>
         </div>
       </div>
 
-      <!-- Chart Container -->
-      <div id="chart-container" class="chart-container"></div>
+      <!-- Chart Container with Overlay Canvas and Floating Tooltip -->
+      <div class="chart-wrapper">
+        <div id="chart-container" class="chart-container"></div>
+        <canvas id="quantile-fan-canvas" class="quantile-fan-canvas"></canvas>
+
+        <!-- Floating Crosshair Tooltip -->
+        <div id="chart-floating-tooltip" class="chart-floating-tooltip hidden">
+          <div class="tooltip-header">
+            <span id="tt-time" class="tooltip-time">--:-- ET</span>
+            <span id="tt-badge" class="tooltip-state-badge badge-none">NO SIGNAL</span>
+          </div>
+          <div class="tooltip-ohlc-grid">
+            <div class="ohlc-cell"><span class="cell-lbl">O</span><span id="tt-open" class="cell-val">---.--</span></div>
+            <div class="ohlc-cell"><span class="cell-lbl">H</span><span id="tt-high" class="cell-val">---.--</span></div>
+            <div class="ohlc-cell"><span class="cell-lbl">L</span><span id="tt-low" class="cell-val">---.--</span></div>
+            <div class="ohlc-cell"><span class="cell-lbl">C</span><span id="tt-close" class="cell-val">---.--</span></div>
+            <div class="ohlc-cell col-span-2"><span class="cell-lbl">Vol</span><span id="tt-volume" class="cell-val">---</span></div>
+            <div class="ohlc-cell col-span-2"><span class="cell-lbl">Return</span><span id="tt-return" class="cell-val">--.--%</span></div>
+          </div>
+          <div id="tt-model-row" class="tooltip-model-row">
+            <div class="meta-info">
+              <span class="meta-label">Calibrated Confidence</span>
+              <span id="tt-conf" class="meta-val">--%</span>
+            </div>
+            <span id="tt-reason" class="reason-tag">abstaining</span>
+          </div>
+          <div id="tt-scenarios" class="tooltip-scenarios">
+            <div class="scen-title">60-Min Quantile Targets</div>
+            <div class="scen-row bull-row">
+              <span class="scen-lbl">Bull (Q90)</span>
+              <span id="tt-q90-price" class="scen-price">---.--</span>
+              <span id="tt-q90-pct" class="scen-pct">+--.--%</span>
+            </div>
+            <div class="scen-row base-row">
+              <span class="scen-lbl">Base (Q50)</span>
+              <span id="tt-q50-price" class="scen-price">---.--</span>
+              <span id="tt-q50-pct" class="scen-pct">--.--%</span>
+            </div>
+            <div class="scen-row bear-row">
+              <span class="scen-lbl">Bear (Q10)</span>
+              <span id="tt-q10-price" class="scen-price">---.--</span>
+              <span id="tt-q10-pct" class="scen-pct">---.--%</span>
+            </div>
+          </div>
+          <div class="tooltip-hint">Click bar to anchor Quantile Fan</div>
+        </div>
+      </div>
 
       <!-- Signal Strip -->
       <div class="strip-container">
         <div class="strip-label">SIGNAL HISTORY STRIP:</div>
-        <div id="signal-strip" class="signal-strip" title="One cell per closed 5m candle. Color indicates direction, opacity indicates confidence."></div>
+        <div id="signal-strip" class="signal-strip" title="One cell per closed 5m candle. Click any cell to inspect that historical bar."></div>
       </div>
 
       <!-- Market Regime Bar -->
       <div class="regime-bar">
-        <span id="regime-text">Market Regime: Low Volatility | Afternoon Session</span>
+        <span id="regime-text">Market Regime: Normal Volatility | Regular Trading Hours</span>
         <span id="disclaimer-mini">Research decision aid • Not financial advice</span>
       </div>
+
+      <!-- Consolidated Historical Signals Log Table & CSV Export -->
+      <div class="card log-card">
+        <div class="card-header-row">
+          <div class="card-title-group">
+            <span class="card-title">HISTORICAL SIGNAL LOG</span>
+            <span class="card-sub-count" id="log-count-badge">33 resolved</span>
+          </div>
+          <div class="log-controls">
+            <label class="checkbox-label">
+              <input type="checkbox" id="log-show-signals" checked>
+              <span>Show signals only</span>
+            </label>
+            <button id="btn-export-csv" class="btn btn-sm btn-export" title="Export Signal History to CSV">
+              <span>Export CSV</span>
+            </button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time (ET)</th>
+                <th>Signal</th>
+                <th>Conf</th>
+                <th>Ref $</th>
+                <th>Exit $</th>
+                <th>Return</th>
+                <th>P&amp;L</th>
+                <th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="signals-log-tbody">
+              <tr><td colspan="8" class="text-center">Loading signal log...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Educational Guide & Methodology Section -->
+      <details class="guide-collapsible">
+        <summary class="guide-summary">
+          <span class="summary-title">Indicator Methodology &amp; Risk Guardrails</span>
+          <span class="summary-toggle">[View Guide]</span>
+        </summary>
+        <div class="guide-body">
+          <div class="guide-grid">
+            <div class="guide-col">
+              <h4>System Architecture</h4>
+              <p>
+                Evaluates AAPL every 5 minutes and estimates price direction over the configured horizon
+                (<strong id="guide-horizon-text">60 minutes</strong>) using a 2-stage LightGBM primary classifier and secondary meta-labeling veto.
+              </p>
+              <h4>Signal Meanings</h4>
+              <ul>
+                <li><strong><span class="text-up">UP</span></strong>: High calibrated confidence that price will rise over the horizon ($m_t \ge \tau_m$).</li>
+                <li><strong><span class="text-down">DOWN</span></strong>: High calibrated confidence that price will fall over the horizon ($m_t \ge \tau_m$).</li>
+                <li><strong>NO SIGNAL</strong>: The model chooses to abstain. In financial markets, abstaining on low-conviction bars is normal and essential.</li>
+              </ul>
+            </div>
+            <div class="guide-col">
+              <h4>When NOT to Trust the Indicator</h4>
+              <ul>
+                <li>During major macroeconomic announcements (CPI, FOMC, Non-Farm Payrolls).</li>
+                <li>The opening settle (first 15 minutes of regular market hours: 09:30–09:45 ET).</li>
+                <li>When market feed status is STALE, DISCONNECTED, or experiencing data gaps.</li>
+                <li>During low-liquidity half-day holiday sessions (Thanksgiving Friday, Christmas Eve).</li>
+              </ul>
+              <h4>Academic Research Disclaimer</h4>
+              <p>
+                Published empirical research on intraday direction shows baseline accuracy near 50%. The model does not guarantee trading profits.
+                This tool is designed strictly as an academic research aid for paper trading. Not financial advice.
+              </p>
+            </div>
+          </div>
+        </div>
+      </details>
     </section>
 
-    <!-- Right Column: Current Signal & Tabs -->
+    <!-- Right Column: Consolidated Sidebar Modules (No Tabs) -->
     <aside class="sidebar-section">
-      <!-- Historical Inspection Banner (Placed above Current Signal) -->
+      <!-- Historical Inspection Banner (Shown when user clicks past bar) -->
       <div id="historical-inspect-banner" class="historical-banner hidden">
         <div class="banner-left">
-          <span class="banner-clock-icon">🕒</span>
           <span>Viewing historical: <strong id="inspect-time">--:-- ET</strong></span>
         </div>
         <button id="btn-return-live" class="btn btn-sm btn-return">Return to Live</button>
       </div>
 
-      <!-- Current Signal Card (1-Second Readability) -->
-      <div class="signal-card" id="current-signal-card">
-        <div class="signal-card-header">
+      <!-- Module 1: Current / Inspected Signal Card -->
+      <div class="card signal-card" id="current-signal-card">
+        <div class="card-header-row">
           <span class="card-title">CURRENT SIGNAL</span>
           <span class="card-ts" id="signal-candle-ts">--:-- ET</span>
         </div>
 
         <div class="signal-main-box">
           <div class="signal-direction-wrapper">
-            <span class="direction-ring" id="signal-icon-ring"><span class="direction-icon" id="signal-icon">○</span></span>
-            <span class="direction-text" id="signal-direction">NO SIGNAL</span>
+            <span class="direction-badge direction-none" id="signal-direction-icon">O</span>
+            <span class="direction-text" id="signal-direction-text">NO SIGNAL</span>
           </div>
-          <div class="confidence-box">
-            <span class="confidence-val" id="signal-confidence">- - %</span>
-            <span class="confidence-label">CONFIDENCE</span>
+          <div class="signal-confidence-wrapper">
+            <span class="conf-val" id="signal-conf-val">- - %</span>
+            <span class="conf-label" id="signal-conf-label">CONFIDENCE</span>
           </div>
         </div>
 
-        <div class="signal-details">
-          <div class="detail-row">
-            <span class="detail-label">Horizon:</span>
-            <span class="detail-value" id="signal-horizon-text">Next -- min</span>
+        <div class="signal-meta-rows">
+          <div class="meta-row">
+            <span class="meta-label">Horizon:</span>
+            <span class="meta-val font-mono" id="signal-horizon-text">Next 60 min</span>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">Resolves at:</span>
-            <span class="detail-value" id="signal-resolve-clock">— (No active trade)</span>
+          <div class="meta-row">
+            <span class="meta-label">Resolves at:</span>
+            <span class="meta-val font-mono" id="signal-resolves-ts">- (No active trade)</span>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">Status:</span>
-            <span class="detail-value" id="signal-reason-text">Awaiting next candle</span>
+          <div class="meta-row">
+            <span class="meta-label">Status:</span>
+            <span class="meta-val" id="signal-status-desc">Evaluating incoming bars</span>
           </div>
-          <div class="detail-row" id="row-diagnostic-lean">
-            <span class="detail-label">Diagnostic Lean:</span>
-            <span class="detail-value" id="signal-diagnostic-lean">--</span>
+          <div class="meta-row">
+            <span class="meta-label">Diagnostic Lean:</span>
+            <span class="meta-val font-mono" id="signal-diagnostic-lean">Abstaining</span>
           </div>
         </div>
       </div>
 
-      <!-- Tabbed Sub-Panel Card Container -->
-      <div class="tabs-card">
-        <!-- Tabs Navigation -->
-        <div class="tabs-nav">
-          <button class="tab-btn active" data-tab="tab-scenarios">Scenarios</button>
-          <button class="tab-btn" data-tab="tab-why">Why</button>
-          <button class="tab-btn" data-tab="tab-log">Log</button>
-          <button class="tab-btn" data-tab="tab-performance">Performance</button>
-          <button class="tab-btn" data-tab="tab-guide">Guide</button>
+      <!-- Module 2: Dynamic Quantile Fan / Support & Resistance Bands -->
+      <div class="card scenario-card">
+        <div class="card-header-row">
+          <span class="card-title">DYNAMIC QUANTILE TARGETS (60-MIN)</span>
+          <span class="card-tag">Support &amp; Resist</span>
         </div>
 
-        <!-- Tab Content: Scenarios -->
-        <div class="tab-content active" id="tab-scenarios">
-          <div class="scenario-cards">
-            <div class="scenario-card bear">
-              <div class="scenario-title">BEAR (Q10)</div>
-              <div class="scenario-price" id="scen-bear-price">---.--</div>
-              <div class="scenario-prob">10% tail mass</div>
-            </div>
-            <div class="scenario-card base">
-              <div class="scenario-title">BASE (Q50)</div>
-              <div class="scenario-price" id="scen-base-price">---.--</div>
-              <div class="scenario-prob" id="scen-base-prob">down (51%)</div>
-            </div>
-            <div class="scenario-card bull">
-              <div class="scenario-title">BULL (Q90)</div>
-              <div class="scenario-price" id="scen-bull-price">---.--</div>
-              <div class="scenario-prob">10% tail mass</div>
-            </div>
+        <div class="scenario-cards-grid">
+          <div class="scen-box scen-bear">
+            <div class="scen-box-header">BEAR (Q10)</div>
+            <div class="scen-box-price" id="scen-bear-price">---.--</div>
+            <div class="scen-box-sub" id="scen-bear-sub">10% tail mass</div>
           </div>
-          <div class="narrative-box">
-            <div class="narrative-heading">Follow-up Analog Narrative</div>
-            <p id="narrative-text" class="narrative-text">
-              Awaiting active signal to generate empirical analog projection...
-            </p>
-            <div id="narrative-policy-note" class="narrative-note hidden" style="display: none; margin-top: 8px; color: var(--color-text-dim); font-style: italic;">
-              Note: Horizon extends past the 16:00 ET regular session close; directional signal suppressed by policy.
-            </div>
+          <div class="scen-box scen-base">
+            <div class="scen-box-header">BASE (Q50)</div>
+            <div class="scen-box-price" id="scen-base-price">---.--</div>
+            <div class="scen-box-sub" id="scen-base-prob">Expected median</div>
           </div>
-          <div class="panel-disclaimer">
-            Model quantile estimate based on historical volatility. Not a price guarantee.
+          <div class="scen-box scen-bull">
+            <div class="scen-box-header">BULL (Q90)</div>
+            <div class="scen-box-price" id="scen-bull-price">---.--</div>
+            <div class="scen-box-sub" id="scen-bull-sub">10% tail mass</div>
           </div>
         </div>
 
-        <!-- Tab Content: Why (Drivers) -->
-        <div class="tab-content" id="tab-why">
-          <div class="why-header">
-            <div>
-              <span>Top Contributing Features</span>
-              <div class="why-subtitle">SHAP (log-odds)</div>
-            </div>
-            <span class="model-tag" id="why-model-version">Bundle v1</span>
+        <!-- Follow-up Analog Narrative -->
+        <div class="narrative-box">
+          <div class="narrative-title">Follow-up Analog Narrative</div>
+          <div class="narrative-content" id="narrative-text">
+            Awaiting bar finalisation to compute 60-minute quantile forecasts.
           </div>
-          <div id="drivers-list" class="drivers-list">
-            <div class="driver-empty">No active signal drivers available for this candle.</div>
+          <div class="narrative-policy-note hidden" id="narrative-policy-note">
+            Note: Horizon extends past regular session close; directional signal suppressed by policy.
           </div>
-          <div class="why-footer">
-            <div class="footer-item"><span>Training Range:</span> <span id="why-train-range">2020–2024</span></div>
-            <div class="footer-item"><span>Label Type:</span> <span id="why-label-type">fixed_horizon (kdz=0.30)</span></div>
-            <div class="footer-item"><span>Features:</span> <span id="why-feat-count">33 Causal Features</span></div>
+        </div>
+        <div class="panel-disclaimer">
+          Model quantile estimate based on historical volatility. Not a price guarantee.
+        </div>
+      </div>
+
+      <!-- Module 3: Feature Attribution / SHAP View -->
+      <div class="card drivers-card">
+        <div class="card-header-row">
+          <div class="card-title-group">
+            <span class="card-title">TOP CONTRIBUTING FEATURES</span>
+            <span class="sub-label">SHAP (log-odds)</span>
+          </div>
+          <span class="card-tag" id="why-model-version">Bundle v1</span>
+        </div>
+
+        <div class="drivers-list" id="drivers-list">
+          <div class="driver-empty">No feature contributions recorded for this candle.</div>
+        </div>
+
+        <div class="drivers-footer">
+          <div class="footer-row">
+            <span>Training Range:</span>
+            <strong class="font-mono">2020-2024</strong>
+          </div>
+          <div class="footer-row">
+            <span>Label Type:</span>
+            <strong class="font-mono" id="why-label-type">fixed_horizon (kdz=0.30)</strong>
+          </div>
+          <div class="footer-row">
+            <span>Features:</span>
+            <strong class="font-mono" id="why-feat-count">33 Causal Features</strong>
+          </div>
+        </div>
+      </div>
+
+      <!-- Module 4: Model Telemetry & Performance Metrics -->
+      <div class="card perf-card">
+        <div class="card-header-row">
+          <span class="card-title">MODEL PERFORMANCE (OUT-OF-SAMPLE)</span>
+          <span class="card-tag">Realised</span>
+        </div>
+
+        <div class="perf-metrics-grid">
+          <div class="perf-metric">
+            <span class="metric-val" id="perf-accuracy">--%</span>
+            <span class="metric-label">Signal Accuracy</span>
+            <span class="metric-sub" id="perf-wilson-ci">95% CI: [--%, --%]</span>
+          </div>
+          <div class="perf-metric">
+            <span class="metric-val" id="perf-pnl">0.0 bps</span>
+            <span class="metric-label">Net Simulated P&amp;L</span>
+            <span class="metric-sub">After 1.0 bp/side costs</span>
+          </div>
+          <div class="perf-metric">
+            <span class="metric-val" id="perf-trades-count">0</span>
+            <span class="metric-label">Signals Resolved</span>
+            <span class="metric-sub" id="perf-neff">n_eff = 0</span>
+          </div>
+          <div class="perf-metric">
+            <span class="metric-val" id="perf-max-dd">0.0 bps</span>
+            <span class="metric-label">Max Drawdown</span>
+            <span class="metric-sub">Realised intra-test</span>
           </div>
         </div>
 
-        <!-- Tab Content: Log -->
-        <div class="tab-content" id="tab-log">
-          <div class="log-controls">
-            <label class="checkbox-label">
-              <input type="checkbox" id="log-filter-signals" checked> Show signals only
-            </label>
-            <a id="btn-export-csv" href="/api/export.csv" target="_blank" class="btn btn-sm btn-primary">Export CSV</a>
-          </div>
-          <div class="table-wrapper">
-            <table class="data-table" id="signals-log-table">
-              <thead>
-                <tr>
-                  <th>Time (ET)</th>
-                  <th>Signal</th>
-                  <th>Conf</th>
-                  <th>Ref $</th>
-                  <th>Exit $</th>
-                  <th>Return</th>
-                  <th>P&amp;L</th>
-                  <th>Outcome</th>
-                </tr>
-              </thead>
-              <tbody id="signals-log-tbody">
-                <tr><td colspan="8" class="text-center">Loading signal log...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Tab Content: Performance -->
-        <div class="tab-content" id="tab-performance">
-          <div class="perf-grid">
-            <div class="perf-metric">
-              <span class="metric-val" id="perf-accuracy">--%</span>
-              <span class="metric-label">Signal Accuracy</span>
-              <span class="metric-sub" id="perf-wilson-ci">95% CI: [--%, --%]</span>
-            </div>
-            <div class="perf-metric">
-              <span class="metric-val" id="perf-pnl">0.0 bps</span>
-              <span class="metric-label">Net Simulated P&amp;L</span>
-              <span class="metric-sub">After 1.0 bp/side costs</span>
-            </div>
-            <div class="perf-metric">
-              <span class="metric-val" id="perf-trades-count">0</span>
-              <span class="metric-label">Signals Resolved</span>
-              <span class="metric-sub" id="perf-neff">n_eff = 0</span>
-            </div>
-            <div class="perf-metric">
-              <span class="metric-val" id="perf-max-dd">0.0 bps</span>
-              <span class="metric-label">Max Drawdown</span>
-              <span class="metric-sub">Realised intra-test</span>
-            </div>
-          </div>
-
-          <div class="perf-section-title">Baseline Comparison (Same Candles)</div>
+        <div class="perf-section-title">Baseline Comparison (Same Candles)</div>
+        <div class="table-responsive">
           <table class="data-table">
             <thead>
               <tr>
@@ -266,54 +383,22 @@
               <tr><td>RSI Rule (14)</td><td id="b-rsi-cnt">0</td><td id="b-rsi-acc">--%</td><td id="b-rsi-pnl">0.0 bps</td></tr>
             </tbody>
           </table>
-
-          <div class="perf-section-title">Cost Sensitivity</div>
-          <div class="cost-sensitivity-box" id="perf-cost-sensitivity">
-            <span>0.5 bps: <strong>0.0 bps</strong></span> •
-            <span>1.0 bps: <strong>0.0 bps</strong></span> •
-            <span>3.0 bps: <strong>0.0 bps</strong></span>
-          </div>
-
-          <div class="panel-disclaimer">
-            Small sample warning: Intraday directional edge is subtle (~50-51%). A 5-day sample is insufficient to judge statistical edge.
-          </div>
         </div>
 
-        <!-- Tab Content: User Guide -->
-        <div class="tab-content" id="tab-guide">
-          <div class="guide-container">
-            <h3>How to Read this Indicator</h3>
-            <p>
-              This system evaluates AAPL every 5 minutes and estimates price direction over the configured horizon
-              (<strong id="guide-horizon-text">-- minutes</strong>) using a 2-stage LightGBM primary and meta-labeling architecture.
-            </p>
+        <div class="perf-section-title">Cost Sensitivity</div>
+        <div class="cost-sensitivity-box" id="perf-cost-sensitivity">
+          <span>0.5 bps: <strong>0.0 bps</strong></span> •
+          <span>1.0 bps: <strong>0.0 bps</strong></span> •
+          <span>3.0 bps: <strong>0.0 bps</strong></span>
+        </div>
 
-            <h4>Signal Meanings</h4>
-            <ul>
-              <li><strong><span class="text-up">▲ UP</span></strong>: High calibrated confidence that price will rise over the horizon.</li>
-              <li><strong><span class="text-down">▼ DOWN</span></strong>: High calibrated confidence that price will fall over the horizon.</li>
-              <li><strong>NO SIGNAL</strong>: The model chooses to abstain. In financial markets, abstaining on low-conviction bars is normal and essential.</li>
-            </ul>
-
-            <h4>When NOT to Trust the Indicator</h4>
-            <ul>
-              <li>During major macro releases (CPI, FOMC) or earnings announcements.</li>
-              <li>The opening settle (first 15 minutes of regular market hours: 09:30–09:45 ET).</li>
-              <li>When the market feed is marked STALE, DISCONNECTED, or experiencing unusual gaps.</li>
-              <li>During low-liquidity half-day holiday sessions (Thanksgiving Friday, Christmas Eve).</li>
-            </ul>
-
-            <h4>Honest Expectations &amp; Disclaimer</h4>
-            <p>
-              Published research on intraday direction shows baseline accuracy near 50%. The model does not guarantee trading profits.
-              This tool is designed strictly as an academic decision aid for paper trading. Not financial advice.
-            </p>
-          </div>
+        <div class="panel-disclaimer">
+          Small sample warning: Intraday directional edge is subtle (~50-51%). A 5-day sample is insufficient to judge statistical edge.
         </div>
       </div>
     </aside>
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

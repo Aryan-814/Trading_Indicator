@@ -746,6 +746,7 @@ class LiveStreamRunner:
             asyncio.create_task(self._run_stream_loop()),
             asyncio.create_task(self._run_finalise_loop()),
             asyncio.create_task(self._run_watchdog_loop()),
+            asyncio.create_task(self._run_periodic_sync_loop()),
         ]
 
     async def stop(self) -> None:
@@ -856,4 +857,43 @@ class LiveStreamRunner:
                 break
             except asyncio.TimeoutError:
                 self.collector.check_feed_stale(max_stale_seconds=self.stale_seconds)
+
+    async def _run_periodic_sync_loop(self) -> None:
+        """Periodically sync candles from Alpaca REST during market hours to prevent drift."""
+        while not self._stop_event.is_set():
+            try:
+                await asyncio.wait_for(self._stop_event.wait(), timeout=60.0)
+                break
+            except asyncio.TimeoutError:
+                if is_nyse_market_open():
+                    try:
+                        saved = warm_start_alpaca_rest(
+                            self.collector.conn,
+                            api_key=self.api_key,
+                            secret_key=self.secret_key,
+                            symbols=self.collector.symbols,
+                            days=1,
+                        )
+                        if saved > 0:
+                            c_row = self.collector.conn.execute(
+                                "SELECT * FROM candles WHERE symbol = ? ORDER BY ts_start DESC LIMIT 1",
+                                (self.collector.primary_symbol,),
+                            ).fetchone()
+                            if c_row:
+                                c_dict = dict(c_row)
+                                b_ts = c_dict["ts_start"]
+                                if self.collector.on_candle_saved:
+                                    res = self.collector.on_candle_saved(c_dict)
+                                    if asyncio.iscoroutine(res):
+                                        await res
+                                if self.collector.on_bucket_finalised:
+                                    res = self.collector.on_bucket_finalised(b_ts, True)
+                                    if asyncio.iscoroutine(res):
+                                        await res
+                                if self.collector.on_bucket_scored:
+                                    res = self.collector.on_bucket_scored(b_ts)
+                                    if asyncio.iscoroutine(res):
+                                        await res
+                    except Exception as exc:
+                        logger.debug(f"Periodic sync notice: {exc}")
 

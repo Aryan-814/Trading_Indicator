@@ -1,0 +1,291 @@
+/* ==========================================================================
+   IntradayChart.css - Financial Terminal Theme & Tooltip Styling
+   Supports both Daylight (Light) and Dark themes via CSS Variables
+   ========================================================================== */
+
+:root,
+.financial-chart-container.dark {
+  --chart-bg: #0b0f19;
+  --chart-surface: #111827;
+  --chart-surface-glass: rgba(17, 24, 39, 0.88);
+  --chart-border: #1e293b;
+  --chart-border-subtle: #243048;
+  --chart-text-primary: #f8fafc;
+  --chart-text-secondary: #94a3b8;
+  --chart-text-muted: #64748b;
+
+  --chart-bull: #10b981;
+  --chart-bull-glow: rgba(16, 185, 129, 0.25);
+  --chart-bull-bg: rgba(16, 185, 129, 0.12);
+
+  --chart-bear: #ef4444;
+  --chart-bear-glow: rgba(239, 68, 68, 0.25);
+  --chart-bear-bg: rgba(239, 68, 68, 0.12);
+
+  --chart-base: #3b82f6;
+  --chart-base-bg: rgba(59, 130, 246, 0.12);
+
+  --chart-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+}
+
+.financial-chart-container.daylight {
+  --chart-bg: #ffffff;
+  --chart-surface: #f8fafc;
+  --chart-surface-glass: rgba(255, 255, 255, 0.92);
+  --chart-border: #e2e8f0;
+  --chart-border-subtle: #cbd5e1;
+  --chart-text-primary: #0f172a;
+  --chart-text-secondary: #475569;
+  --chart-text-muted: #94a3b8;
+
+  --chart-bull: #059669;
+  --chart-bull-glow: rgba(5, 150, 105, 0.20);
+  --chart-bull-bg: rgba(5, 150, 105, 0.10);
+
+  --chart-bear: #dc2626;
+  --chart-bear-glow: rgba(220, 38, 38, 0.20);
+  --chart-bear-bg: rgba(220, 38, 38, 0.10);
+
+  --chart-base: #2563eb;
+  --chart-base-bg: rgba(37, 99, 235, 0.10);
+
+  --chart-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
+}
+
+/* Container */
+.financial-chart-container {
+  position: relative;
+  width: 100%;
+  background: var(--chart-bg);
+  border-radius: 8px;
+  overflow: hidden;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.chart-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+/* Shaded Quantile Fan Canvas Layer */
+.quantile-fan-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Floating Interactive Tooltip */
+.chart-floating-tooltip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  width: 260px;
+  background: var(--chart-surface-glass);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--chart-border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: var(--chart-shadow);
+  pointer-events: none;
+  transition: transform 0.05s ease-out, opacity 0.15s ease-in-out;
+  color: var(--chart-text-primary);
+  font-size: 12px;
+}
+
+.tooltip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--chart-border);
+}
+
+.tooltip-time {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--chart-text-secondary);
+}
+
+.tooltip-state-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.badge-up {
+  background: var(--chart-bull-bg);
+  color: var(--chart-bull);
+  border: 1px solid var(--chart-bull-glow);
+}
+
+.badge-down {
+  background: var(--chart-bear-bg);
+  color: var(--chart-bear);
+  border: 1px solid var(--chart-bear-glow);
+}
+
+.badge-none {
+  background: var(--chart-border);
+  color: var(--chart-text-muted);
+}
+
+/* OHLC Grid */
+.tooltip-ohlc-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px 6px;
+  margin-bottom: 8px;
+}
+
+.ohlc-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.ohlc-cell.col-span-2 {
+  grid-column: span 2;
+}
+
+.cell-lbl {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--chart-text-muted);
+  letter-spacing: 0.05em;
+}
+
+.cell-val {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--chart-text-primary);
+}
+
+.text-bull {
+  color: var(--chart-bull);
+}
+
+.text-bear {
+  color: var(--chart-bear);
+}
+
+/* Model Row */
+.tooltip-model-row {
+  background: var(--chart-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.meta-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.meta-label {
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--chart-text-secondary);
+  text-transform: uppercase;
+}
+
+.meta-val {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--chart-base);
+}
+
+.reason-tag {
+  font-size: 9px;
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.15);
+  color: var(--chart-text-secondary);
+  text-transform: capitalize;
+}
+
+/* Scenarios / Quantile Fan Box */
+.tooltip-scenarios {
+  border-top: 1px solid var(--chart-border);
+  padding-top: 6px;
+  margin-bottom: 6px;
+}
+
+.scen-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--chart-text-secondary);
+  margin-bottom: 4px;
+}
+
+.scen-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.scen-lbl {
+  color: var(--chart-text-secondary);
+  font-size: 10px;
+}
+
+.scen-price {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+}
+
+.scen-pct {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.bull-row .scen-price,
+.bull-row .scen-pct {
+  color: var(--chart-bull);
+}
+
+.base-row .scen-price,
+.base-row .scen-pct {
+  color: var(--chart-base);
+}
+
+.bear-row .scen-price,
+.bear-row .scen-pct {
+  color: var(--chart-bear);
+}
+
+.tooltip-hint {
+  font-size: 9px;
+  text-align: center;
+  color: var(--chart-text-muted);
+  font-style: italic;
+  padding-top: 4px;
+  border-top: 1px dashed var(--chart-border);
+}
+

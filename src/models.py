@@ -283,7 +283,8 @@ def make_signal(b, hist):
             if day_ret_contrib < -0.025 or day_ret_val <= -0.004:
                 suppress_driver_conflict = True
     elif side_dir == "down":
-        if day_ret_val < 0.0 and rsi_val < 53.0:
+        # Suppress counter-trend short entries if intraday momentum is bullish
+        if day_ret_val > 0.004 or day_ret_contrib > 0.025 or rsi_contrib > 0.025:
             suppress_driver_conflict = True
 
     # Top-decile intraday conviction on bullish rally days (e.g. 2026-11-11)

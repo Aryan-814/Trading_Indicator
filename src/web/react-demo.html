@@ -1,0 +1,1268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AAPL Intraday 5M React Trading Chart & Quantile Fan</title>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- TradingView Lightweight Charts v4.2.0 -->
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+
+  <!-- React 18 & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel Standalone for inline JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* CSS Variables & Reset */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif; }
+
+    /* ==========================================================================
+       IntradayChart.css
+       ========================================================================== */
+    :root, .financial-chart-container.dark {
+      --chart-bg: #0b0f19;
+      --chart-surface: #111827;
+      --chart-surface-glass: rgba(17, 24, 39, 0.88);
+      --chart-border: #1e293b;
+      --chart-border-subtle: #243048;
+      --chart-text-primary: #f8fafc;
+      --chart-text-secondary: #94a3b8;
+      --chart-text-muted: #64748b;
+      --chart-bull: #10b981;
+      --chart-bull-glow: rgba(16, 185, 129, 0.25);
+      --chart-bull-bg: rgba(16, 185, 129, 0.12);
+      --chart-bear: #ef4444;
+      --chart-bear-glow: rgba(239, 68, 68, 0.25);
+      --chart-bear-bg: rgba(239, 68, 68, 0.12);
+      --chart-base: #3b82f6;
+      --chart-base-bg: rgba(59, 130, 246, 0.12);
+      --chart-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+    }
+    .financial-chart-container.daylight {
+      --chart-bg: #ffffff;
+      --chart-surface: #f8fafc;
+      --chart-surface-glass: rgba(255, 255, 255, 0.92);
+      --chart-border: #e2e8f0;
+      --chart-border-subtle: #cbd5e1;
+      --chart-text-primary: #0f172a;
+      --chart-text-secondary: #475569;
+      --chart-text-muted: #94a3b8;
+      --chart-bull: #059669;
+      --chart-bull-glow: rgba(5, 150, 105, 0.20);
+      --chart-bull-bg: rgba(5, 150, 105, 0.10);
+      --chart-bear: #dc2626;
+      --chart-bear-glow: rgba(220, 38, 38, 0.20);
+      --chart-bear-bg: rgba(220, 38, 38, 0.10);
+      --chart-base: #2563eb;
+      --chart-base-bg: rgba(37, 99, 235, 0.10);
+      --chart-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
+    }
+    .financial-chart-container {
+      position: relative;
+      width: 100%;
+      background: var(--chart-bg);
+      border-radius: 8px;
+      overflow: hidden;
+      user-select: none;
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    .chart-viewport { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+    .quantile-fan-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; }
+    .chart-floating-tooltip {
+      position: absolute; top: 0; left: 0; z-index: 10; width: 260px;
+      background: var(--chart-surface-glass); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--chart-border-subtle); border-radius: 8px; padding: 12px;
+      box-shadow: var(--chart-shadow); pointer-events: none;
+      transition: transform 0.05s ease-out; color: var(--chart-text-primary); font-size: 12px;
+    }
+    .tooltip-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid var(--chart-border); }
+    .tooltip-time { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600; color: var(--chart-text-secondary); }
+    .tooltip-state-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 6px; border-radius: 4px; }
+    .badge-up { background: var(--chart-bull-bg); color: var(--chart-bull); border: 1px solid var(--chart-bull-glow); }
+    .badge-down { background: var(--chart-bear-bg); color: var(--chart-bear); border: 1px solid var(--chart-bear-glow); }
+    .badge-none { background: var(--chart-border); color: var(--chart-text-muted); }
+    .tooltip-ohlc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 6px; margin-bottom: 8px; }
+    .ohlc-cell { display: flex; flex-direction: column; }
+    .ohlc-cell.col-span-2 { grid-column: span 2; }
+    .cell-lbl { font-size: 9px; font-weight: 600; text-transform: uppercase; color: var(--chart-text-muted); }
+    .cell-val { font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 600; color: var(--chart-text-primary); }
+    .text-bull { color: var(--chart-bull); }
+    .text-bear { color: var(--chart-bear); }
+    .tooltip-model-row { background: var(--chart-border); border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+    .meta-info { display: flex; flex-direction: column; }
+    .meta-label { font-size: 9px; font-weight: 500; color: var(--chart-text-secondary); text-transform: uppercase; }
+    .meta-val { font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 700; color: var(--chart-base); }
+    .reason-tag { font-size: 9px; font-weight: 600; padding: 2px 5px; border-radius: 3px; background: rgba(0, 0, 0, 0.15); color: var(--chart-text-secondary); text-transform: capitalize; }
+    .tooltip-scenarios { border-top: 1px solid var(--chart-border); padding-top: 6px; margin-bottom: 6px; }
+    .scen-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--chart-text-secondary); margin-bottom: 4px; }
+    .scen-row { display: flex; align-items: center; justify-content: space-between; padding: 2px 0; font-size: 11px; }
+    .scen-lbl { color: var(--chart-text-secondary); font-size: 10px; }
+    .scen-price, .scen-pct { font-family: "JetBrains Mono", monospace; font-weight: 600; }
+    .bull-row .scen-price, .bull-row .scen-pct { color: var(--chart-bull); }
+    .base-row .scen-price, .base-row .scen-pct { color: var(--chart-base); }
+    .bear-row .scen-price, .bear-row .scen-pct { color: var(--chart-bear); }
+    .tooltip-hint { font-size: 9px; text-align: center; color: var(--chart-text-muted); font-style: italic; padding-top: 4px; border-top: 1px dashed var(--chart-border); }
+
+    /* ==========================================================================
+       AAPLTradingDashboard.css
+       ========================================================================== */
+    .dashboard-root { display: flex; flex-direction: column; min-height: 100vh; transition: background-color 0.2s ease, color 0.2s ease; }
+    .dashboard-root.dark { background-color: #080c14; color: #f8fafc; }
+    .dashboard-root.daylight { background-color: #f1f5f9; color: #0f172a; }
+    .dashboard-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; border-bottom: 1px solid rgba(148, 163, 184, 0.15); background: rgba(15, 23, 42, 0.4); backdrop-filter: blur(8px); }
+    .dashboard-root.daylight .dashboard-header { background: rgba(255, 255, 255, 0.85); border-bottom: 1px solid #e2e8f0; }
+    .header-brand { display: flex; align-items: center; gap: 16px; }
+    .brand-ticker { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+    .brand-name { font-size: 13px; color: #94a3b8; font-weight: 500; }
+    .dashboard-root.daylight .brand-name { color: #64748b; }
+    .brand-price-box { display: flex; align-items: baseline; gap: 8px; margin-left: 12px; }
+    .brand-price { font-family: "JetBrains Mono", monospace; font-size: 18px; font-weight: 700; }
+    .brand-change { font-family: "JetBrains Mono", monospace; font-size: 13px; font-weight: 600; }
+    .header-controls { display: flex; align-items: center; gap: 10px; }
+    .control-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid rgba(148, 163, 184, 0.2); background: rgba(255, 255, 255, 0.05); color: inherit; transition: all 0.15s ease; }
+    .control-btn:hover { background: rgba(255, 255, 255, 0.1); }
+    .dashboard-root.daylight .control-btn { background: #ffffff; border-color: #cbd5e1; }
+    .dashboard-root.daylight .control-btn:hover { background: #f8fafc; }
+    .control-btn.active { background: #3b82f6; border-color: #2563eb; color: #ffffff; }
+    .dashboard-main { display: grid; grid-template-columns: 1fr 340px; gap: 16px; padding: 16px 20px; flex: 1; }
+    @media (max-width: 1080px) { .dashboard-main { grid-template-columns: 1fr; } }
+    .chart-card { display: flex; flex-direction: column; background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    .dashboard-root.daylight .chart-card { background: #ffffff; border-color: #e2e8f0; }
+    .chart-card-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid rgba(148, 163, 184, 0.1); font-size: 12px; }
+    .chart-legend { display: flex; align-items: center; gap: 14px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #94a3b8; font-weight: 500; }
+    .dashboard-root.daylight .legend-item { color: #64748b; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .legend-dot.bull { background: #10b981; }
+    .legend-dot.base { background: #3b82f6; }
+    .legend-dot.bear { background: #ef4444; }
+    .sidebar-panel { display: flex; flex-direction: column; gap: 14px; }
+    .panel-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
+    .dashboard-root.daylight .panel-card { background: #ffffff; border-color: #e2e8f0; }
+    .card-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
+    .dashboard-root.daylight .card-title { color: #64748b; }
+    .signal-status-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .signal-badge-lg { padding: 5px 12px; border-radius: 6px; font-size: 13px; font-weight: 800; letter-spacing: 0.03em; }
+    .signal-badge-lg.up { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .signal-badge-lg.down { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .signal-badge-lg.none { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.2); }
+    .metric-row { margin-bottom: 10px; }
+    .metric-labels { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; color: #94a3b8; }
+    .dashboard-root.daylight .metric-labels { color: #475569; }
+    .metric-meter-bar { height: 6px; background: rgba(148, 163, 184, 0.15); border-radius: 3px; overflow: hidden; }
+    .meter-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+    .meter-fill.bull { background: #10b981; }
+    .meter-fill.bear { background: #ef4444; }
+    .meter-fill.base { background: #3b82f6; }
+    .checks-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(148, 163, 184, 0.1); }
+    .check-item { display: flex; flex-direction: column; background: rgba(255, 255, 255, 0.03); padding: 6px 8px; border-radius: 6px; font-size: 10px; }
+    .dashboard-root.daylight .check-item { background: #f8fafc; }
+    .check-lbl { color: #94a3b8; font-weight: 500; }
+    .check-status { font-weight: 700; font-size: 11px; margin-top: 2px; }
+    .check-status.pass { color: #10b981; }
+    .check-status.veto { color: #ef4444; }
+    .quantile-cards-grid { display: flex; flex-direction: column; gap: 8px; }
+    .q-target-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-radius: 6px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(148, 163, 184, 0.08); }
+    .dashboard-root.daylight .q-target-row { background: #f8fafc; border-color: #e2e8f0; }
+    .q-label { display: flex; flex-direction: column; font-size: 11px; }
+    .q-name { font-weight: 600; }
+    .q-desc { font-size: 9px; color: #94a3b8; }
+    .q-values { display: flex; flex-direction: column; align-items: flex-end; font-family: "JetBrains Mono", monospace; }
+    .q-price { font-size: 12px; font-weight: 700; }
+    .q-pct { font-size: 10px; font-weight: 600; }
+    .q-target-row.bull .q-name, .q-target-row.bull .q-price, .q-target-row.bull .q-pct { color: #10b981; }
+    .q-target-row.base .q-name, .q-target-row.base .q-price, .q-target-row.base .q-pct { color: #3b82f6; }
+    .q-target-row.bear .q-name, .q-target-row.bear .q-price, .q-target-row.bear .q-pct { color: #ef4444; }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .stat-cell { background: rgba(255, 255, 255, 0.02); padding: 8px; border-radius: 6px; display: flex; flex-direction: column; }
+    .dashboard-root.daylight .stat-cell { background: #f8fafc; }
+    .stat-lbl { font-size: 10px; color: #94a3b8; }
+    .stat-val { font-family: "JetBrains Mono", monospace; font-size: 13px; font-weight: 700; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React Application Source with Babel -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+    // 1. Mock Data Generator
+    function generateAAPLIntradayData(basePrice = 227.50, dateStr = "2026-11-16") {
+      const candles = [];
+      const signals = [];
+      const totalBars = 78;
+      const baseDate = new Date(`${dateStr}T14:30:00Z`);
+      let currentPrice = basePrice;
+
+      for (let i = 0; i < totalBars; i++) {
+        const barTime = new Date(baseDate.getTime() + i * 5 * 60 * 1000);
+        const epochSec = Math.floor(barTime.getTime() / 1000);
+        const isoString = barTime.toISOString();
+
+        const progress = i / totalBars;
+        const uCurve = 1.0 + 2.5 * Math.pow(progress - 0.5, 2);
+        const baseVolume = Math.round((45000 + Math.sin(i * 0.4) * 15000) * uCurve);
+
+        const drift = (Math.sin(i * 0.15) * 0.15) + ((Math.random() - 0.48) * 0.35);
+        const open = Math.round(currentPrice * 100) / 100;
+        const close = Math.round((open + drift) * 100) / 100;
+        const high = Math.round((Math.max(open, close) + Math.random() * 0.28) * 100) / 100;
+        const low = Math.round((Math.min(open, close) - Math.random() * 0.28) * 100) / 100;
+        currentPrice = close;
+
+        candles.push({
+          time: epochSec,
+          iso: isoString,
+          open,
+          high,
+          low,
+          close,
+          volume: baseVolume,
+        });
+
+        const barsLeft = totalBars - 1 - i;
+        let direction = "none";
+        let reason = null;
+        let confidence = 0.50;
+        let metaProb = 0.50;
+        let shapCheckPassed = true;
+
+        const volScale = 0.008 + (Math.sin(i * 0.1) * 0.002);
+        const q10Ret = -volScale * 1.645;
+        const q50Ret = drift > 0 ? 0.0015 : -0.0012;
+        const q90Ret = volScale * 1.645;
+
+        const bearPrice = Math.round(close * (1 + q10Ret) * 100) / 100;
+        const baseTargetPath = Math.round(close * (1 + q50Ret) * 100) / 100;
+        const bullPrice = Math.round(close * (1 + q90Ret) * 100) / 100;
+
+        if (i < 6) {
+          reason = "opening_settle";
+          confidence = 0.50;
+          metaProb = 0.45;
+        } else if (barsLeft < 12) {
+          reason = "horizon_past_close";
+          confidence = 0.50;
+          metaProb = 0.48;
+        } else {
+          if (i === 12 || i === 24 || i === 42 || i === 54) {
+            direction = "up";
+            confidence = 0.65 + (Math.sin(i) * 0.08);
+            metaProb = 0.62 + (Math.sin(i) * 0.05);
+            shapCheckPassed = true;
+          } else if (i === 18 || i === 33 || i === 48) {
+            direction = "down";
+            confidence = 0.62 + (Math.cos(i) * 0.07);
+            metaProb = 0.59 + (Math.cos(i) * 0.04);
+            shapCheckPassed = true;
+          } else if (i % 7 === 0) {
+            reason = "meta_label_veto";
+            direction = "none";
+            confidence = 0.52;
+            metaProb = 0.48;
+            shapCheckPassed = false;
+          } else {
+            reason = "dead_zone";
+            direction = "none";
+            confidence = 0.50;
+            metaProb = 0.49;
+          }
+        }
+
+        signals.push({
+          time: epochSec,
+          candle_ts: isoString,
+          horizon_bars: 12,
+          horizon_minutes: 60,
+          direction,
+          confidence: Math.round(confidence * 1000) / 1000,
+          meta_prob: Math.round(metaProb * 1000) / 1000,
+          reason,
+          shap_check_passed: shapCheckPassed,
+          scenarios: {
+            bear_q10: bearPrice,
+            base_q50: baseTargetPath,
+            bull_q90: bullPrice,
+            pct_bear: Math.round(q10Ret * 10000) / 100,
+            pct_base: Math.round(q50Ret * 10000) / 100,
+            pct_bull: Math.round(q90Ret * 10000) / 100,
+          },
+        });
+      }
+
+      return { candles, signals };
+    }
+
+    // 2. IntradayChart Component
+    function IntradayChart({
+      candles = [],
+      signals = [],
+      selectedTime = null,
+      onSelectTime = () => {},
+      theme = "dark",
+      palette = "green-red",
+      showQuantileFan = true,
+      height = 560,
+    }) {
+      const containerRef = useRef(null);
+      const chartWrapperRef = useRef(null);
+      const canvasRef = useRef(null);
+
+      const chartRef = useRef(null);
+      const candleSeriesRef = useRef(null);
+      const volumeSeriesRef = useRef(null);
+      const bullLineSeriesRef = useRef(null);
+      const baseLineSeriesRef = useRef(null);
+      const bearLineSeriesRef = useRef(null);
+
+      const [tooltip, setTooltip] = useState({
+        visible: false,
+        x: 0,
+        y: 0,
+        candle: null,
+        signal: null,
+      });
+
+      const candlesMap = useMemo(() => {
+        const map = new Map();
+        for (const c of candles) map.set(c.time, c);
+        return map;
+      }, [candles]);
+
+      const signalsMap = useMemo(() => {
+        const map = new Map();
+        for (const s of signals) map.set(s.time, s);
+        return map;
+      }, [signals]);
+
+      const colors = useMemo(() => {
+        const isDark = theme === "dark";
+        const isBlueOrange = palette === "blue-orange";
+        const upColor = isBlueOrange ? "#3b82f6" : "#10b981";
+        const downColor = isBlueOrange ? "#f97316" : "#ef4444";
+        const baseColor = isDark ? "#93c5fd" : "#2563eb";
+
+        return {
+          isDark,
+          bg: isDark ? "#0b0f19" : "#ffffff",
+          panelBg: isDark ? "#111827" : "#f8fafc",
+          textColor: isDark ? "#94a3b8" : "#475569",
+          borderColor: isDark ? "#1e293b" : "#e2e8f0",
+          gridColor: isDark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.04)",
+          crosshairColor: isDark ? "#475569" : "#94a3b8",
+          up: upColor,
+          down: downColor,
+          base: baseColor,
+          upVol: isBlueOrange ? "rgba(59, 130, 246, 0.35)" : "rgba(16, 185, 129, 0.35)",
+          downVol: isBlueOrange ? "rgba(249, 115, 22, 0.35)" : "rgba(239, 68, 68, 0.35)",
+          fanFillUp: isBlueOrange ? "rgba(59, 130, 246, 0.12)" : "rgba(16, 185, 129, 0.12)",
+          fanFillDown: isBlueOrange ? "rgba(249, 115, 22, 0.12)" : "rgba(239, 68, 68, 0.12)",
+          fanFillNeutral: "rgba(99, 102, 241, 0.08)",
+        };
+      }, [theme, palette]);
+
+      const activeTime = useMemo(() => {
+        if (selectedTime && candlesMap.has(selectedTime)) return selectedTime;
+        if (candles.length > 0) return candles[candles.length - 1].time;
+        return null;
+      }, [selectedTime, candles, candlesMap]);
+
+      const renderCanvasFanOverlay = useCallback(() => {
+        const canvas = canvasRef.current;
+        const chart = chartRef.current;
+        const candleSeries = candleSeriesRef.current;
+        if (!canvas || !chart || !candleSeries || !showQuantileFan || !activeTime) {
+          if (canvas) {
+            const ctx = canvas.getContext("2d");
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+          }
+          return;
+        }
+
+        const sig = signalsMap.get(activeTime);
+        const refCandle = candlesMap.get(activeTime);
+        if (!sig || !refCandle || !sig.scenarios) return;
+
+        const ctx = canvas.getContext("2d");
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const timeScale = chart.timeScale();
+        const hBars = sig.horizon_bars || 12;
+        const originX = timeScale.timeToCoordinate(activeTime);
+        const originY = candleSeries.priceToCoordinate(refCandle.close);
+
+        if (originX === null || originY === null) return;
+
+        const upperPoints = [];
+        const lowerPoints = [];
+        const medianPoints = [];
+
+        const p0 = refCandle.close;
+        const pBull = sig.scenarios.bull_q90;
+        const pBase = sig.scenarios.base_q50;
+        const pBear = sig.scenarios.bear_q10;
+
+        for (let k = 0; k <= hBars; k++) {
+          const stepTime = activeTime + k * 300;
+          const x = timeScale.timeToCoordinate(stepTime);
+          if (x === null) continue;
+
+          const ratio = Math.sqrt(k / hBars);
+          const linearRatio = k / hBars;
+
+          const currBull = p0 + (pBull - p0) * ratio;
+          const currBase = p0 + (pBase - p0) * linearRatio;
+          const currBear = p0 + (pBear - p0) * ratio;
+
+          const yBull = candleSeries.priceToCoordinate(currBull);
+          const yBase = candleSeries.priceToCoordinate(currBase);
+          const yBear = candleSeries.priceToCoordinate(currBear);
+
+          if (yBull !== null && yBear !== null) {
+            upperPoints.push({ x, y: yBull });
+            lowerPoints.push({ x, y: yBear });
+            if (yBase !== null) medianPoints.push({ x, y: yBase });
+          }
+        }
+
+        if (upperPoints.length < 2) return;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(upperPoints[0].x, upperPoints[0].y);
+
+        for (let i = 1; i < upperPoints.length; i++) {
+          ctx.lineTo(upperPoints[i].x, upperPoints[i].y);
+        }
+        for (let i = lowerPoints.length - 1; i >= 0; i--) {
+          ctx.lineTo(lowerPoints[i].x, lowerPoints[i].y);
+        }
+        ctx.closePath();
+
+        const gradient = ctx.createLinearGradient(
+          upperPoints[0].x,
+          originY,
+          upperPoints[upperPoints.length - 1].x,
+          originY
+        );
+        const channelColor =
+          sig.direction === "up"
+            ? colors.fanFillUp
+            : sig.direction === "down"
+            ? colors.fanFillDown
+            : colors.fanFillNeutral;
+
+        gradient.addColorStop(0, "rgba(59, 130, 246, 0.02)");
+        gradient.addColorStop(0.3, channelColor);
+        gradient.addColorStop(1, channelColor);
+
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([4, 4]);
+
+        ctx.strokeStyle = colors.up;
+        ctx.beginPath();
+        ctx.moveTo(upperPoints[0].x, upperPoints[0].y);
+        for (let i = 1; i < upperPoints.length; i++) {
+          ctx.lineTo(upperPoints[i].x, upperPoints[i].y);
+        }
+        ctx.stroke();
+
+        ctx.strokeStyle = colors.down;
+        ctx.beginPath();
+        ctx.moveTo(lowerPoints[0].x, lowerPoints[0].y);
+        for (let i = 1; i < lowerPoints.length; i++) {
+          ctx.lineTo(lowerPoints[i].x, lowerPoints[i].y);
+        }
+        ctx.stroke();
+
+        if (medianPoints.length >= 2) {
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([2, 3]);
+          ctx.strokeStyle = colors.base;
+          ctx.beginPath();
+          ctx.moveTo(medianPoints[0].x, medianPoints[0].y);
+          for (let i = 1; i < medianPoints.length; i++) {
+            ctx.lineTo(medianPoints[i].x, medianPoints[i].y);
+          }
+          ctx.stroke();
+        }
+
+        const lastX = upperPoints[upperPoints.length - 1].x;
+        const lastYBull = upperPoints[upperPoints.length - 1].y;
+        const lastYBear = lowerPoints[lowerPoints.length - 1].y;
+
+        ctx.setLineDash([]);
+        ctx.font = "10px JetBrains Mono, monospace";
+        ctx.textBaseline = "middle";
+
+        ctx.fillStyle = colors.up;
+        ctx.fillText(`Q90 $${pBull.toFixed(2)}`, lastX + 6, lastYBull);
+
+        ctx.fillStyle = colors.down;
+        ctx.fillText(`Q10 $${pBear.toFixed(2)}`, lastX + 6, lastYBear);
+
+        ctx.restore();
+      }, [activeTime, signalsMap, candlesMap, showQuantileFan, colors]);
+
+      const resizeCanvas = useCallback(() => {
+        if (!containerRef.current || !canvasRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const canvas = canvasRef.current;
+
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
+        canvas.style.width = `${rect.width}px`;
+        canvas.style.height = `${rect.height}px`;
+
+        const ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+        renderCanvasFanOverlay();
+      }, [renderCanvasFanOverlay]);
+
+      useEffect(() => {
+        const LC = window.LightweightCharts;
+        if (!LC || !containerRef.current) return;
+
+        const { createChart, CrosshairMode, LineStyle } = LC;
+
+        const chart = createChart(containerRef.current, {
+          width: containerRef.current.clientWidth,
+          height: typeof height === "number" ? height : 560,
+          layout: {
+            background: { color: colors.bg },
+            textColor: colors.textColor,
+            fontFamily: "'Inter', sans-serif",
+          },
+          grid: {
+            vertLines: { color: colors.gridColor },
+            horzLines: { color: colors.gridColor },
+          },
+          crosshair: {
+            mode: CrosshairMode.Normal,
+            vertLine: {
+              color: colors.crosshairColor,
+              width: 1,
+              style: LineStyle.Dashed,
+              labelBackgroundColor: colors.panelBg,
+            },
+            horzLine: {
+              color: colors.crosshairColor,
+              width: 1,
+              style: LineStyle.Dashed,
+              labelBackgroundColor: colors.panelBg,
+            },
+          },
+          rightPriceScale: {
+            borderColor: colors.borderColor,
+            scaleMargins: {
+              top: 0.08,
+              bottom: 0.26,
+            },
+          },
+          timeScale: {
+            borderColor: colors.borderColor,
+            timeVisible: true,
+            secondsVisible: false,
+          },
+        });
+
+        chartRef.current = chart;
+
+        const candleSeries = chart.addCandlestickSeries({
+          upColor: colors.up,
+          downColor: colors.down,
+          borderUpColor: colors.up,
+          borderDownColor: colors.down,
+          wickUpColor: colors.up,
+          wickDownColor: colors.down,
+        });
+        candleSeriesRef.current = candleSeries;
+
+        const volumeSeries = chart.addHistogramSeries({
+          color: colors.upVol,
+          priceFormat: { type: "volume" },
+          priceScaleId: "",
+        });
+        volumeSeriesRef.current = volumeSeries;
+
+        chart.priceScale("").applyOptions({
+          scaleMargins: {
+            top: 0.80,
+            bottom: 0,
+          },
+        });
+
+        bullLineSeriesRef.current = chart.addLineSeries({
+          color: colors.up,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          lastValueVisible: true,
+          priceLineVisible: false,
+        });
+
+        baseLineSeriesRef.current = chart.addLineSeries({
+          color: colors.base,
+          lineWidth: 2,
+          lineStyle: LineStyle.Solid,
+          lastValueVisible: true,
+          priceLineVisible: true,
+        });
+
+        bearLineSeriesRef.current = chart.addLineSeries({
+          color: colors.down,
+          lineWidth: 1,
+          lineStyle: LineStyle.Dashed,
+          lastValueVisible: true,
+          priceLineVisible: false,
+        });
+
+        chart.subscribeCrosshairMove((param) => {
+          if (
+            !param.point ||
+            !param.time ||
+            param.point.x < 0 ||
+            param.point.x > containerRef.current.clientWidth ||
+            param.point.y < 0 ||
+            param.point.y > containerRef.current.clientHeight
+          ) {
+            setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+            return;
+          }
+
+          const candle = candlesMap.get(param.time);
+          const signal = signalsMap.get(param.time);
+
+          if (candle) {
+            const tooltipWidth = 260;
+            const tooltipHeight = 220;
+            const containerWidth = containerRef.current.clientWidth;
+            const containerHeight = containerRef.current.clientHeight;
+
+            let posX = param.point.x + 18;
+            let posY = param.point.y + 18;
+
+            if (posX + tooltipWidth > containerWidth) {
+              posX = param.point.x - tooltipWidth - 18;
+            }
+            if (posY + tooltipHeight > containerHeight) {
+              posY = param.point.y - tooltipHeight - 18;
+            }
+
+            setTooltip({
+              visible: true,
+              x: posX,
+              y: posY,
+              candle,
+              signal,
+            });
+          } else {
+            setTooltip((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+          }
+        });
+
+        chart.subscribeClick((param) => {
+          if (param && param.time) {
+            onSelectTime(param.time);
+          }
+        });
+
+        chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+          renderCanvasFanOverlay();
+        });
+        chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+          renderCanvasFanOverlay();
+        });
+
+        const resizeObserver = new ResizeObserver(() => {
+          if (containerRef.current && chartRef.current) {
+            const w = containerRef.current.clientWidth;
+            chartRef.current.applyOptions({ width: w });
+            resizeCanvas();
+          }
+        });
+        resizeObserver.observe(containerRef.current);
+
+        resizeCanvas();
+
+        return () => {
+          resizeObserver.disconnect();
+          chart.remove();
+          chartRef.current = null;
+        };
+      }, [colors, height, onSelectTime, renderCanvasFanOverlay, resizeCanvas]);
+
+      useEffect(() => {
+        if (!chartRef.current || !candleSeriesRef.current) return;
+        chartRef.current.applyOptions({
+          layout: {
+            background: { color: colors.bg },
+            textColor: colors.textColor,
+          },
+          grid: {
+            vertLines: { color: colors.gridColor },
+            horzLines: { color: colors.gridColor },
+          },
+          rightPriceScale: { borderColor: colors.borderColor },
+          timeScale: { borderColor: colors.borderColor },
+        });
+
+        candleSeriesRef.current.applyOptions({
+          upColor: colors.up,
+          downColor: colors.down,
+          borderUpColor: colors.up,
+          borderDownColor: colors.down,
+          wickUpColor: colors.up,
+          wickDownColor: colors.down,
+        });
+
+        if (volumeSeriesRef.current) {
+          volumeSeriesRef.current.applyOptions({
+            color: colors.upVol,
+          });
+        }
+
+        resizeCanvas();
+      }, [colors, resizeCanvas]);
+
+      useEffect(() => {
+        if (!candleSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
+
+        candleSeriesRef.current.setData(candles);
+
+        const volumeData = candles.map((c) => ({
+          time: c.time,
+          value: c.volume,
+          color: c.close >= c.open ? colors.upVol : colors.downVol,
+        }));
+        volumeSeriesRef.current.setData(volumeData);
+
+        renderCanvasFanOverlay();
+      }, [candles, colors, renderCanvasFanOverlay]);
+
+      useEffect(() => {
+        if (!candleSeriesRef.current) return;
+
+        const markers = [];
+        const sortedSignals = [...signals].sort((a, b) => a.time - b.time);
+
+        for (const sig of sortedSignals) {
+          if (sig.direction !== "up" && sig.direction !== "down") continue;
+          if (sig.shap_check_passed === false) continue;
+
+          const isUp = sig.direction === "up";
+          const confPct = Math.round((sig.confidence || 0.5) * 100);
+
+          markers.push({
+            time: sig.time,
+            position: isUp ? "belowBar" : "aboveBar",
+            color: isUp ? colors.up : colors.down,
+            shape: isUp ? "arrowUp" : "arrowDown",
+            text: `${isUp ? "UP" : "DN"} ${confPct}%`,
+            id: `sig-${sig.time}`,
+          });
+        }
+
+        const uniqueMarkers = [];
+        let lastTime = null;
+        for (const m of markers) {
+          if (m.time !== lastTime) {
+            uniqueMarkers.push(m);
+            lastTime = m.time;
+          }
+        }
+
+        candleSeriesRef.current.setMarkers(uniqueMarkers);
+      }, [signals, colors]);
+
+      useEffect(() => {
+        if (!bullLineSeriesRef.current || !baseLineSeriesRef.current || !bearLineSeriesRef.current) return;
+
+        if (!showQuantileFan || !activeTime) {
+          bullLineSeriesRef.current.setData([]);
+          baseLineSeriesRef.current.setData([]);
+          bearLineSeriesRef.current.setData([]);
+          renderCanvasFanOverlay();
+          return;
+        }
+
+        const sig = signalsMap.get(activeTime);
+        const refCandle = candlesMap.get(activeTime);
+
+        if (sig && refCandle && sig.scenarios) {
+          const hBars = sig.horizon_bars || 12;
+          const p0 = refCandle.close;
+          const pBull = sig.scenarios.bull_q90;
+          const pBase = sig.scenarios.base_q50;
+          const pBear = sig.scenarios.bear_q10;
+
+          const bullLine = [];
+          const baseLine = [];
+          const bearLine = [];
+
+          for (let k = 0; k <= hBars; k++) {
+            const stepTime = activeTime + k * 300;
+            const ratio = Math.sqrt(k / hBars);
+            const linearRatio = k / hBars;
+
+            bullLine.push({ time: stepTime, value: p0 + (pBull - p0) * ratio });
+            baseLine.push({ time: stepTime, value: p0 + (pBase - p0) * linearRatio });
+            bearLine.push({ time: stepTime, value: p0 + (pBear - p0) * ratio });
+          }
+
+          bullLineSeriesRef.current.setData(bullLine);
+          baseLineSeriesRef.current.setData(baseLine);
+          bearLineSeriesRef.current.setData(bearLine);
+        } else {
+          bullLineSeriesRef.current.setData([]);
+          baseLineSeriesRef.current.setData([]);
+          bearLineSeriesRef.current.setData([]);
+        }
+
+        renderCanvasFanOverlay();
+      }, [activeTime, signalsMap, candlesMap, showQuantileFan, renderCanvasFanOverlay]);
+
+      return (
+        <div
+          className={`financial-chart-container ${theme}`}
+          ref={chartWrapperRef}
+          style={{ height }}
+        >
+          <div className="chart-viewport" ref={containerRef} />
+          <canvas
+            className="quantile-fan-canvas"
+            ref={canvasRef}
+            style={{ pointerEvents: "none" }}
+          />
+
+          {tooltip.visible && tooltip.candle && (
+            <div
+              className="chart-floating-tooltip"
+              style={{
+                transform: `translate3d(${tooltip.x}px, ${tooltip.y}px, 0)`,
+              }}
+            >
+              <div className="tooltip-header">
+                <span className="tooltip-time">
+                  {new Date(tooltip.candle.time * 1000).toLocaleTimeString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                    timeZone: "America/New_York",
+                  })}{" "}
+                  ET
+                </span>
+                <span
+                  className={`tooltip-state-badge ${
+                    tooltip.signal?.direction === "up"
+                      ? "badge-up"
+                      : tooltip.signal?.direction === "down"
+                      ? "badge-down"
+                      : "badge-none"
+                  }`}
+                >
+                  {tooltip.signal?.direction === "up"
+                    ? "▲ BUY SIGNAL"
+                    : tooltip.signal?.direction === "down"
+                    ? "▼ SELL SIGNAL"
+                    : "NO SIGNAL"}
+                </span>
+              </div>
+
+              <div className="tooltip-ohlc-grid">
+                <div className="ohlc-cell">
+                  <span className="cell-lbl">O</span>
+                  <span className="cell-val">${tooltip.candle.open.toFixed(2)}</span>
+                </div>
+                <div className="ohlc-cell">
+                  <span className="cell-lbl">H</span>
+                  <span className="cell-val">${tooltip.candle.high.toFixed(2)}</span>
+                </div>
+                <div className="ohlc-cell">
+                  <span className="cell-lbl">L</span>
+                  <span className="cell-val">${tooltip.candle.low.toFixed(2)}</span>
+                </div>
+                <div className="ohlc-cell">
+                  <span className="cell-lbl">C</span>
+                  <span
+                    className={`cell-val ${
+                      tooltip.candle.close >= tooltip.candle.open ? "text-bull" : "text-bear"
+                    }`}
+                  >
+                    ${tooltip.candle.close.toFixed(2)}
+                  </span>
+                </div>
+                <div className="ohlc-cell col-span-2">
+                  <span className="cell-lbl">Vol</span>
+                  <span className="cell-val">{tooltip.candle.volume.toLocaleString()}</span>
+                </div>
+                <div className="ohlc-cell col-span-2">
+                  <span className="cell-lbl">Change</span>
+                  <span
+                    className={`cell-val ${
+                      tooltip.candle.close >= tooltip.candle.open ? "text-bull" : "text-bear"
+                    }`}
+                  >
+                    {(
+                      ((tooltip.candle.close - tooltip.candle.open) / tooltip.candle.open) *
+                      100
+                    ).toFixed(2)}
+                    %
+                  </span>
+                </div>
+              </div>
+
+              {tooltip.signal && (
+                <div className="tooltip-model-row">
+                  <div className="meta-info">
+                    <span className="meta-label">Calibrated Confidence</span>
+                    <span className="meta-val">
+                      {(tooltip.signal.confidence * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  {tooltip.signal.reason && tooltip.signal.direction === "none" && (
+                    <div className="reason-tag">
+                      {tooltip.signal.reason.replace(/_/g, " ")}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {tooltip.signal?.scenarios && (
+                <div className="tooltip-scenarios">
+                  <div className="scen-title">60-Min Quantile Targets</div>
+                  <div className="scen-row bull-row">
+                    <span className="scen-lbl">Bull (Q90)</span>
+                    <span className="scen-price">
+                      ${tooltip.signal.scenarios.bull_q90.toFixed(2)}
+                    </span>
+                    <span className="scen-pct">
+                      {tooltip.signal.scenarios.pct_bull >= 0 ? "+" : ""}
+                      {tooltip.signal.scenarios.pct_bull}%
+                    </span>
+                  </div>
+                  <div className="scen-row base-row">
+                    <span className="scen-lbl">Base (Q50)</span>
+                    <span className="scen-price">
+                      ${tooltip.signal.scenarios.base_q50.toFixed(2)}
+                    </span>
+                    <span className="scen-pct">
+                      {tooltip.signal.scenarios.pct_base >= 0 ? "+" : ""}
+                      {tooltip.signal.scenarios.pct_base}%
+                    </span>
+                  </div>
+                  <div className="scen-row bear-row">
+                    <span className="scen-lbl">Bear (Q10)</span>
+                    <span className="scen-price">
+                      ${tooltip.signal.scenarios.bear_q10.toFixed(2)}
+                    </span>
+                    <span className="scen-pct">
+                      {tooltip.signal.scenarios.pct_bear}%
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="tooltip-hint">Click bar to anchor Quantile Fan</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // 3. Full Terminal Dashboard Integration Component
+    function AAPLTradingDashboard() {
+      const [theme, setTheme] = useState("dark");
+      const [palette, setPalette] = useState("green-red");
+      const [showQuantileFan, setShowQuantileFan] = useState(true);
+
+      const { candles, signals } = useMemo(() => generateAAPLIntradayData(227.50), []);
+      const [selectedTime, setSelectedTime] = useState(candles[candles.length - 1]?.time);
+
+      const activeCandle = useMemo(() => {
+        return candles.find((c) => c.time === selectedTime) || candles[candles.length - 1];
+      }, [candles, selectedTime]);
+
+      const activeSignal = useMemo(() => {
+        return signals.find((s) => s.time === selectedTime) || signals[signals.length - 1];
+      }, [signals, selectedTime]);
+
+      const firstOpen = candles[0]?.open || 227.0;
+      const latestClose = activeCandle?.close || 227.5;
+      const netChange = latestClose - firstOpen;
+      const netChangePct = (netChange / firstOpen) * 100;
+      const isDayPositive = netChange >= 0;
+
+      return (
+        <div className={`dashboard-root ${theme}`}>
+          <header className="dashboard-header">
+            <div className="header-brand">
+              <div>
+                <span className="brand-ticker">AAPL</span>
+                <span className="brand-name"> Apple Inc. · NASDAQ</span>
+              </div>
+              <div className="brand-price-box">
+                <span className="brand-price">${latestClose.toFixed(2)}</span>
+                <span
+                  className="brand-change"
+                  style={{ color: isDayPositive ? "#10b981" : "#ef4444" }}
+                >
+                  {isDayPositive ? "+" : ""}
+                  {netChange.toFixed(2)} ({isDayPositive ? "+" : ""}
+                  {netChangePct.toFixed(2)}%)
+                </span>
+              </div>
+            </div>
+
+            <div className="header-controls">
+              <button
+                className={`control-btn ${showQuantileFan ? "active" : ""}`}
+                onClick={() => setShowQuantileFan(!showQuantileFan)}
+                title="Toggle 60-Minute Forward Quantile Fan"
+              >
+                <span>Quantile Fan</span>
+              </button>
+
+              <button
+                className="control-btn"
+                onClick={() =>
+                  setPalette(palette === "green-red" ? "blue-orange" : "green-red")
+                }
+                title="Toggle Color Palette"
+              >
+                <span>Palette: {palette === "green-red" ? "Green / Red" : "Blue / Orange"}</span>
+              </button>
+
+              <button
+                className="control-btn"
+                onClick={() => setTheme(theme === "dark" ? "daylight" : "dark")}
+                title="Toggle Daylight / Dark Theme"
+              >
+                <span>{theme === "dark" ? "Daylight" : "Dark Mode"}</span>
+              </button>
+            </div>
+          </header>
+
+          <main className="dashboard-main">
+            <div className="chart-card">
+              <div className="chart-card-header">
+                <div className="chart-legend">
+                  <span style={{ fontWeight: 700, color: "var(--chart-text-primary)" }}>
+                    AAPL · 5M OHLCV
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-dot bull" /> Bull (Q90)
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-dot base" /> Base (Q50)
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-dot bear" /> Bear (Q10)
+                  </span>
+                </div>
+                <div style={{ color: "#94a3b8", fontSize: "11px" }}>
+                  Anchor Time:{" "}
+                  <span style={{ fontFamily: "JetBrains Mono", fontWeight: 600 }}>
+                    {activeCandle
+                      ? new Date(activeCandle.time * 1000).toLocaleTimeString("en-US", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: false,
+                          timeZone: "America/New_York",
+                        }) + " ET"
+                      : "--:--"}
+                  </span>
+                </div>
+              </div>
+
+              <IntradayChart
+                candles={candles}
+                signals={signals}
+                selectedTime={selectedTime}
+                onSelectTime={(time) => setSelectedTime(time)}
+                theme={theme}
+                palette={palette}
+                showQuantileFan={showQuantileFan}
+                height={580}
+              />
+            </div>
+
+            <aside className="sidebar-panel">
+              <div className="panel-card">
+                <div className="card-title">
+                  <span>Model Signal & Confidence</span>
+                  <span style={{ fontSize: "10px", color: "#64748b" }}>h = 12 (60m)</span>
+                </div>
+
+                <div className="signal-status-row">
+                  <span
+                    className={`signal-badge-lg ${
+                      activeSignal?.direction === "up"
+                        ? "up"
+                        : activeSignal?.direction === "down"
+                        ? "down"
+                        : "none"
+                    }`}
+                  >
+                    {activeSignal?.direction === "up"
+                      ? "▲ ACTIONABLE BUY"
+                      : activeSignal?.direction === "down"
+                      ? "▼ ACTIONABLE SELL"
+                      : "NO SIGNAL"}
+                  </span>
+                  <span style={{ fontFamily: "JetBrains Mono", fontWeight: 700, fontSize: "13px" }}>
+                    {activeSignal ? (activeSignal.confidence * 100).toFixed(1) : 0}%
+                  </span>
+                </div>
+
+                <div className="metric-row">
+                  <div className="metric-labels">
+                    <span>Calibrated Confidence</span>
+                    <span>Threshold: 58.0%</span>
+                  </div>
+                  <div className="metric-meter-bar">
+                    <div
+                      className={`meter-fill ${
+                        activeSignal?.direction === "up"
+                          ? "bull"
+                          : activeSignal?.direction === "down"
+                          ? "bear"
+                          : "base"
+                      }`}
+                      style={{
+                        width: `${Math.min(100, Math.max(0, (activeSignal?.confidence || 0.5) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="checks-grid">
+                  <div className="check-item">
+                    <span className="check-lbl">Meta-Model (m_t)</span>
+                    <span className="check-status pass">
+                      {(activeSignal?.meta_prob || 0.5) >= 0.50 ? "PASS" : "VETO"} (
+                      {activeSignal?.meta_prob?.toFixed(2)})
+                    </span>
+                  </div>
+                  <div className="check-item">
+                    <span className="check-lbl">SHAP Direction</span>
+                    <span
+                      className={`check-status ${
+                        activeSignal?.shap_check_passed ? "pass" : "veto"
+                      }`}
+                    >
+                      {activeSignal?.shap_check_passed ? "AGREEMENT" : "CONFLICT"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-title">
+                  <span>Dynamic Quantile Fan Targets</span>
+                  <span style={{ fontSize: "10px", color: "#64748b" }}>Support / Resist</span>
+                </div>
+
+                <div className="quantile-cards-grid">
+                  <div className="q-target-row bull">
+                    <div className="q-label">
+                      <span className="q-name">Bull Resistance</span>
+                      <span className="q-desc">Quantile 90% (Q90)</span>
+                    </div>
+                    <div className="q-values">
+                      <span className="q-price">
+                        ${activeSignal?.scenarios?.bull_q90?.toFixed(2) || "---.--"}
+                      </span>
+                      <span className="q-pct">
+                        {activeSignal?.scenarios?.pct_bull >= 0 ? "+" : ""}
+                        {activeSignal?.scenarios?.pct_bull || 0}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="q-target-row base">
+                    <div className="q-label">
+                      <span className="q-name">Median Expected</span>
+                      <span className="q-desc">Quantile 50% (Q50)</span>
+                    </div>
+                    <div className="q-values">
+                      <span className="q-price">
+                        ${activeSignal?.scenarios?.base_q50?.toFixed(2) || "---.--"}
+                      </span>
+                      <span className="q-pct">
+                        {activeSignal?.scenarios?.pct_base >= 0 ? "+" : ""}
+                        {activeSignal?.scenarios?.pct_base || 0}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="q-target-row bear">
+                    <div className="q-label">
+                      <span className="q-name">Bear Support</span>
+                      <span className="q-desc">Quantile 10% (Q10)</span>
+                    </div>
+                    <div className="q-values">
+                      <span className="q-price">
+                        ${activeSignal?.scenarios?.bear_q10?.toFixed(2) || "---.--"}
+                      </span>
+                      <span className="q-pct">
+                        {activeSignal?.scenarios?.pct_bear || 0}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="panel-card">
+                <div className="card-title">
+                  <span>Model Telemetry</span>
+                  <span style={{ fontSize: "10px", color: "#64748b" }}>v1 Production</span>
+                </div>
+
+                <div className="stats-grid">
+                  <div className="stat-cell">
+                    <span className="stat-lbl">Win Rate</span>
+                    <span className="stat-val" style={{ color: "#10b981" }}>
+                      64.2%
+                    </span>
+                  </div>
+                  <div className="stat-cell">
+                    <span className="stat-lbl">Cumulative PnL</span>
+                    <span className="stat-val" style={{ color: "#3b82f6" }}>
+                      +284 bps
+                    </span>
+                  </div>
+                  <div className="stat-cell">
+                    <span className="stat-lbl">Brier Score</span>
+                    <span className="stat-val">0.218</span>
+                  </div>
+                  <div className="stat-cell">
+                    <span className="stat-lbl">Slippage Model</span>
+                    <span className="stat-val">1.0 bps/side</span>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </main>
+        </div>
+      );
+    }
+
+    // Render to DOM
+    ReactDOM.createRoot(document.getElementById("root")).render(<AAPLTradingDashboard />);
+  </script>
+</body>
+</html>
+

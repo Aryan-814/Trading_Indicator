@@ -1,0 +1,432 @@
+/* ==========================================================================
+   AAPLTradingDashboard.css - Full Terminal Layout & Metrics Sidebar
+   ========================================================================== */
+
+.dashboard-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dashboard-root.dark {
+  background-color: #080c14;
+  color: #f8fafc;
+}
+
+.dashboard-root.daylight {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+/* Header Navbar */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(8px);
+}
+
+.dashboard-root.daylight .dashboard-header {
+  background: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-ticker {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.brand-name {
+  font-size: 13px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.dashboard-root.daylight .brand-name {
+  color: #64748b;
+}
+
+.brand-price-box {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.brand-price {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.brand-change {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.control-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  transition: all 0.15s ease;
+}
+
+.control-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-root.daylight .control-btn {
+  background: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.dashboard-root.daylight .control-btn:hover {
+  background: #f8fafc;
+}
+
+.control-btn.active {
+  background: #3b82f6;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+/* Main Terminal Layout: Chart + Sidebar */
+.dashboard-main {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 16px;
+  padding: 16px 20px;
+  flex: 1;
+}
+
+@media (max-width: 1080px) {
+  .dashboard-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Chart Section */
+.chart-card {
+  display: flex;
+  flex-direction: column;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-root.daylight .chart-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.chart-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  font-size: 12px;
+}
+
+.chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.dashboard-root.daylight .legend-item {
+  color: #64748b;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legend-dot.bull { background: #10b981; }
+.legend-dot.base { background: #3b82f6; }
+.legend-dot.bear { background: #ef4444; }
+
+/* Sidebar Metrics Panel */
+.sidebar-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.panel-card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-root.daylight .panel-card {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dashboard-root.daylight .card-title {
+  color: #64748b;
+}
+
+/* Signal Badge */
+.signal-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.signal-badge-lg {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.signal-badge-lg.up {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.signal-badge-lg.down {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.signal-badge-lg.none {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* Metric Meters */
+.metric-row {
+  margin-bottom: 10px;
+}
+
+.metric-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 4px;
+  color: #94a3b8;
+}
+
+.dashboard-root.daylight .metric-labels {
+  color: #475569;
+}
+
+.metric-meter-bar {
+  height: 6px;
+  background: rgba(148, 163, 184, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.meter-fill.bull { background: #10b981; }
+.meter-fill.bear { background: #ef4444; }
+.meter-fill.base { background: #3b82f6; }
+
+/* Filter Checks Grid */
+.checks-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.check-item {
+  display: flex;
+  flex-direction: column;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+.dashboard-root.daylight .check-item {
+  background: #f8fafc;
+}
+
+.check-lbl {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.check-status {
+  font-weight: 700;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.check-status.pass { color: #10b981; }
+.check-status.veto { color: #ef4444; }
+
+/* Quantile Targets Cards */
+.quantile-cards-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.q-target-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.dashboard-root.daylight .q-target-row {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.q-label {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+}
+
+.q-name {
+  font-weight: 600;
+}
+
+.q-desc {
+  font-size: 9px;
+  color: #94a3b8;
+}
+
+.q-values {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.q-price {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.q-pct {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.q-target-row.bull .q-name,
+.q-target-row.bull .q-price,
+.q-target-row.bull .q-pct {
+  color: #10b981;
+}
+
+.q-target-row.base .q-name,
+.q-target-row.base .q-price,
+.q-target-row.base .q-pct {
+  color: #3b82f6;
+}
+
+.q-target-row.bear .q-name,
+.q-target-row.bear .q-price,
+.q-target-row.bear .q-pct {
+  color: #ef4444;
+}
+
+/* Key Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stat-cell {
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-root.daylight .stat-cell {
+  background: #f8fafc;
+}
+
+.stat-lbl {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.stat-val {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+

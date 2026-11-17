@@ -17,7 +17,10 @@ from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 import yaml
+
+load_dotenv()
 
 from src.live.collector import (
     CandleCollector,
@@ -97,7 +100,7 @@ def create_app(
     db_path: str | Path = "data/live/indicator.db",
     backup_dir: str | Path = "backups",
     bundle_path: str | Path = "models/v1",
-    enable_stream: bool = False,
+    enable_stream: bool | None = None,
     enable_lock: bool = False,
     lock_path: str | Path = "data/live/collector.lock",
     alpaca_api_key: str | None = None,
@@ -110,6 +113,15 @@ def create_app(
     backup_d = Path(backup_dir or cfg.get("db_backup_dir", "backups"))
     bundle_p = Path(bundle_path)
     lock_p = Path(lock_path or cfg.get("lock_path", "data/live/collector.lock"))
+
+    if enable_stream is None:
+        stream_env = os.getenv("ENABLE_STREAM", "").lower()
+        if stream_env in ("true", "1", "yes"):
+            enable_stream = True
+        elif stream_env in ("false", "0", "no"):
+            enable_stream = False
+        else:
+            enable_stream = bool(cfg.get("enable_stream", True))
 
     ws_manager = ConnectionManager()
     lock_fd: int | None = None
@@ -209,6 +221,19 @@ def create_app(
                     days=int(cfg.get("warm_start_days", 30)),
                     parquet_path=cfg.get("data_path", "data/clean/aapl_5m_clean.parquet"),
                 )
+            elif key and secret:
+                try:
+                    from src.live.collector import warm_start_alpaca_rest
+                    logger.info("Catching up recent candles from Alpaca REST...")
+                    warm_start_alpaca_rest(
+                        conn=conn,
+                        api_key=key,
+                        secret_key=secret,
+                        symbols=tuple(cfg.get("symbols", ["AAPL", "SPY", "QQQ"])),
+                        days=int(cfg.get("warm_start_days", 5)),
+                    )
+                except Exception as exc:
+                    logger.warning(f"Alpaca REST catchup failed: {exc}")
 
             # Backfill current session signals if enabled
             if cfg.get("backfill_session_on_start", True):
