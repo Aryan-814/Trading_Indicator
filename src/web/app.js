@@ -902,9 +902,10 @@
     state.inspectedSignal = sig;
     state.activeFanSignal = sig;
     el.historicalInspectBanner.classList.remove("hidden");
-    el.inspectTime.textContent = `${formatTime(sig.candle_ts)} ET`;
+    el.inspectTime.textContent = `${formatTime(sig.candle_ts)} ${state.timezone === "local" ? "Local" : "ET"}`;
     updateSignalCard(sig);
     updateQuantileFanLines(sig);
+    paintQuantileFanOverlay();
   }
 
   // Update Current / Inspected Signal Card
@@ -1126,6 +1127,11 @@
   // Update Historical Signals Log Table (Old Log Tab)
   function renderLogTable() {
     el.signalsLogTbody.innerHTML = "";
+    const thTime = document.getElementById("th-log-time");
+    if (thTime) {
+      thTime.textContent = state.timezone === "local" ? "Time (Local)" : "Time (ET)";
+    }
+
     const allSignals = Array.from(state.signalsMap.values()).sort(
       (a, b) => new Date(b.candle_ts) - new Date(a.candle_ts)
     );
@@ -1145,6 +1151,8 @@
 
     for (const s of filtered.slice(0, 100)) {
       const tr = document.createElement("tr");
+      tr.style.cursor = "pointer";
+      tr.title = "Click to inspect signal and view quantile targets on chart";
       const isUp = s.direction === "up";
       const isDown = s.direction === "down";
       const dirClass = isUp ? "text-up" : isDown ? "text-down" : "text-none";
@@ -1167,6 +1175,15 @@
         <td>${pnlText}</td>
         <td>${outcomeText}</td>
       `;
+
+      tr.addEventListener("click", () => {
+        applyInspectedSignal(s);
+        const epoch = parseIsoToEpochSeconds(s.candle_ts);
+        if (state.chart && epoch) {
+          state.chart.timeScale().scrollToPosition(0, false);
+        }
+      });
+
       el.signalsLogTbody.appendChild(tr);
     }
   }
@@ -1604,8 +1621,13 @@
           let hasNewSignal = false;
           for (const s of sigs) {
             const existing = state.signalsMap.get(s.candle_ts);
-            if (!existing || existing.direction !== s.direction) {
-              state.signalsMap.set(s.candle_ts, s);
+            if (
+              !existing ||
+              existing.direction !== s.direction ||
+              existing.correct !== s.correct ||
+              existing.exit_price !== s.exit_price
+            ) {
+              state.signalsMap.set(s.candle_ts, { ...existing, ...s });
               hasNewSignal = true;
             }
           }
@@ -1623,6 +1645,13 @@
             renderMarkers();
             renderSignalStrip();
             renderLogTable();
+
+            fetch("/api/stats")
+              .then((r) => (r.ok ? r.json() : null))
+              .then((st) => {
+                if (st) updatePerformance(st);
+              })
+              .catch(() => {});
           }
         }
       }
