@@ -1577,6 +1577,91 @@
     }
   }
 
+  // Live Heartbeat Polling & Tab Re-activation sync
+  async function pollLiveUpdates() {
+    try {
+      const [candlesRes, sigsRes, healthRes] = await Promise.all([
+        fetch("/api/candles?symbol=AAPL&limit=10"),
+        fetch("/api/signals?limit=10"),
+        fetch("/api/health"),
+      ]);
+
+      if (candlesRes.ok) {
+        const candles = await candlesRes.json();
+        if (Array.isArray(candles)) {
+          for (const c of candles) {
+            const existing = state.candlesMap.get(c.ts_start);
+            if (!existing || existing.close !== c.close || existing.volume !== c.volume) {
+              handleCandleUpdate(c);
+            }
+          }
+        }
+      }
+
+      if (sigsRes.ok) {
+        const sigs = await sigsRes.json();
+        if (Array.isArray(sigs)) {
+          let hasNewSignal = false;
+          for (const s of sigs) {
+            const existing = state.signalsMap.get(s.candle_ts);
+            if (!existing || existing.direction !== s.direction) {
+              state.signalsMap.set(s.candle_ts, s);
+              hasNewSignal = true;
+            }
+          }
+          if (hasNewSignal) {
+            const sorted = Array.from(state.signalsMap.values()).sort(
+              (a, b) => new Date(a.candle_ts) - new Date(b.candle_ts)
+            );
+            if (sorted.length > 0) {
+              state.latestSignal = sorted[sorted.length - 1];
+              if (!state.inspectedSignal) {
+                updateSignalCard(state.latestSignal);
+                updateQuantileFanLines(state.latestSignal);
+              }
+            }
+            renderMarkers();
+            renderSignalStrip();
+            renderLogTable();
+          }
+        }
+      }
+
+      if (healthRes.ok) {
+        const h = await healthRes.json();
+        if (h && h.market_open != null) {
+          el.badgeMarket.textContent = h.market_open ? "Market: OPEN" : "Market: CLOSED";
+          el.badgeMarket.className = h.market_open ? "badge badge-success" : "badge badge-neutral";
+        }
+      }
+    } catch (err) {
+      console.warn("Live heartbeat poll notice:", err);
+    }
+  }
+
+  // Setup periodic live polling (every 15s) and tab focus sync
+  function initLivePolling() {
+    setInterval(pollLiveUpdates, 15000);
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) {
+        pollLiveUpdates();
+        if (state.chart && !state.inspectedSignal) {
+          state.chart.timeScale().scrollToRealTime();
+        }
+      }
+    });
+
+    // WebSocket keepalive ping every 25s
+    setInterval(() => {
+      if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+        try {
+          state.ws.send("ping");
+        } catch (e) {}
+      }
+    }, 25000);
+  }
+
   // Application Entry Point
   async function start() {
     initChart();
@@ -1585,6 +1670,7 @@
     await fetchModelInfo();
     await loadInitialData();
     connectWebSocket();
+    initLivePolling();
 
     fetch("/api/health")
       .then((r) => (r.ok ? r.json() : null))
